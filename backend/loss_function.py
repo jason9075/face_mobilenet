@@ -2,40 +2,40 @@ from backend.layers import *
 import tensorflow as tf
 
 
-def combine_loss_val(embedding, labels, num_labels, m1, m2, m3, s):
+def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3, s):
     with tf.variable_scope('combine_loss'):
-        n = embedding.get_shape().as_list()[0]
-        tf.fill([tf.shape(embedding)[0], 1], 0.)
-        ordinal = tf.constant(list(range(0, n)), tf.int64)
-        ordinal_y = tf.stack([ordinal, labels], axis=1)
+        ordinal = tf.range(batch_size)
+        ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
 
         embedding_size = embedding.get_shape().as_list()[-1]
         shape = (embedding_size, num_labels)
 
         weights = tf.get_variable(name='w_embedding', shape=shape,
                                   initializer=WEIGHT_INIT, dtype=D_TYPE)
-        weights_unit = tf.nn.l2_normalize(weights, axis=0)
-        embedding_unit = tf.nn.l2_normalize(embedding, axis=1)
-        cos_t = tf.matmul(embedding_unit, weights_unit)
+        weights = tf.nn.l2_normalize(weights, axis=0)
+        embedding = tf.nn.l2_normalize(embedding, axis=1)
 
-        zy = cos_t * s
-        sel_cos_t = tf.gather_nd(zy, ordinal_y)
-        if m1 == 1.0 and m2 == 0.0:
-            s_m = s * m3
-            new_zy = sel_cos_t - s_m
+        cos_t = tf.matmul(embedding, weights)
+        if m1 == 1.0 and m2 == 0.0 and m3 == 0:
+            return cos_t * s  # pure softmax
+
+        cos_t = cos_t * s
+        zy = tf.gather_nd(cos_t, ordinal_y)
+        if m1 == 1.0 and m2 == 0.0:  # cosine face only
+            s_m3 = s * m3
+            new_zy = zy - s_m3
         else:
-            cos_value = sel_cos_t / s
+            cos_value = zy / s
             t = tf.acos(cos_value)
-            if m1 != 1.0:
-                t = t * m1
-            if m2 > 0.0:
-                t = t + m2
-            body = tf.cos(t)
-            if m3 > 0.0:
-                body = body - m3
-            new_zy = body * s
-        updated_logits = tf.add(zy, tf.scatter_nd(ordinal_y, tf.subtract(new_zy, sel_cos_t), zy.get_shape()))
-        # loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=updated_logits))
+            t = t * m1  # sphere
+            t = t + m2  # arc
+            new_cos_value = tf.cos(t)
+            new_cos_value = new_cos_value - m3  # cos
+            new_zy = new_cos_value * s
+        diff = tf.subtract(new_zy, zy)
+        body = tf.scatter_nd(ordinal_y, diff, cos_t.get_shape())
+
+        updated_logits = tf.add(cos_t, body)
 
     return updated_logits
 
@@ -66,16 +66,16 @@ def loss_val():
         print(f'my:\n{sess.run(fc7_my)}\n')
 
 
-def mxnet_function(gt_labels, num_class, embedding, weight, paras):
+def mxnet_function(gt_labels, num_class, embedding, weights, paras):
     m1, m2, m3, s = paras
     ordinal = tf.range(len(gt_labels))
     ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
 
-    weight = tf.nn.l2_normalize(weight, axis=0)
-    nembedding = tf.nn.l2_normalize(embedding, axis=0)
+    weights = tf.nn.l2_normalize(weights, axis=0)
+    nembedding = tf.nn.l2_normalize(embedding, axis=1)
     nembedding = nembedding * s
 
-    fc7 = tf.matmul(nembedding, weight)
+    fc7 = tf.matmul(nembedding, weights)
 
     if m1 != 1.0 or m2 != 0.0 or m3 != 0.0:
         if m1 == 1.0 and m2 == 0.0:
@@ -103,15 +103,15 @@ def mxnet_function(gt_labels, num_class, embedding, weight, paras):
     return fc7
 
 
-def my_impl(gt_labels, embedding, weight, paras):
+def my_impl(gt_labels, embedding, weights, paras):
     m1, m2, m3, s = paras
     ordinal = tf.range(len(gt_labels))
     ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
 
-    weight = tf.nn.l2_normalize(weight, axis=0)
-    embedding = tf.nn.l2_normalize(embedding, axis=0)
+    weights = tf.nn.l2_normalize(weights, axis=0)
+    embedding = tf.nn.l2_normalize(embedding, axis=1)
 
-    cos_t = tf.matmul(embedding, weight)
+    cos_t = tf.matmul(embedding, weights)
     if m1 == 1.0 and m2 == 0.0 and m3 == 0:
         return cos_t * s  # pure softmax
 
