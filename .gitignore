@@ -129,3 +129,7 @@ tfrecord/*
 # images
 images/*
 !images/.keep
+
+# output model
+model_out/*
+!model_out/.keep

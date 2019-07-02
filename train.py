@@ -9,6 +9,8 @@ import utils
 from backend.loss_function import combine_loss_val
 from backend.mobilenet_v2 import MobileNetV2
 
+MODEL_OUT_PATH = os.path.join('model_out')
+
 
 def purge():
     for f in glob.glob(os.path.join('events/events*')):
@@ -19,12 +21,14 @@ def main():
     num_classes = 19
     batch_size = 20
     buffer_size = 10000
-    epoch = 100
+    epoch = 10000
     lr = 0.001
     saver_max_keep = 5
     momentum = 0.99
     show_info_interval = 20
-    summary_interval = 300
+    summary_interval = 200
+    ckpt_interval = 1000
+    validate_interval = 200
     input_size = (224, 224)
 
     purge()
@@ -109,7 +113,6 @@ def main():
             while True:
                 try:
                     images_train, labels_train = sess.run(next_element)
-                    print(labels_train)
                     feed_dict = {input_layer: images_train, labels: labels_train}
                     start = time.time()
                     _, total_loss_val, inference_loss_val, wd_loss_val, _, acc_val = \
@@ -131,16 +134,14 @@ def main():
                         summary_op_val = sess.run(summary_op, feed_dict=feed_dict)
                         summary.add_summary(summary_op_val, count)
 
-                    # # save ckpt files
-                    # if count > 0 and count % args.ckpt_interval == 0:
-                    #     filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
-                    #     filename = os.path.join(args.ckpt_path, filename)
-                    #     saver.save(sess, filename)
-                    #
-                    # # validate
-                    # if count > 0 and count % args.validate_interval == 0:
-                    #     feed_dict_test = {dropout_rate: 1.0}
-                    #     feed_dict_test.update(tl.utils.dict_to_one(net.all_drop))
+                    # save ckpt files
+                    if count > 0 and count % ckpt_interval == 0:
+                        filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+                        filename = os.path.join(MODEL_OUT_PATH, filename)
+                        saver.save(sess, filename)
+
+                    # validate
+                    # if count > 0 and count % validate_interval == 0:
                     #     results = ver_test(ver_list=ver_list, ver_name_list=ver_name_list, nbatch=count, sess=sess,
                     #                        embedding_tensor=embedding_tensor, batch_size=batch_size,
                     #                        feed_dict=feed_dict_test,
