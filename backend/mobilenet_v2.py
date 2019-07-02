@@ -2,12 +2,9 @@ from backend.layers import *
 
 
 class MobileNetV2:
-    def __init__(self, input_size=(224, 224)):
-        self.input_layer = tf.placeholder(D_TYPE,
-                                          [None, input_size[0], input_size[1], 3])  # Input Size: (224,224,3)
-
+    def __init__(self, input_layer):
         with tf.variable_scope('mobilenet_v2'):
-            net = conv2d(self.input_layer, (3, 3), 32, (2, 2), act=tf.nn.relu6, name='conv_1')  # (112,112,32)
+            net = conv2d(input_layer, (3, 3), 32, (2, 2), act=tf.nn.relu6, name='conv_1')  # (112,112,32)
 
             net = depthwise_conv2d(net, (3, 3), (1, 1), act=tf.nn.relu6, name='conv_2_dw')  # (112,112,32)
             net = conv2d(net, (1, 1), 64, (1, 1), act=tf.nn.relu6, name='conv_2')  # (112,112,32)

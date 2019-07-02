@@ -4,7 +4,7 @@ import tensorflow as tf
 
 def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3, s):
     with tf.variable_scope('combine_loss'):
-        ordinal = tf.range(batch_size)
+        ordinal = tf.range(batch_size, dtype=tf.int64)
         ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
 
         embedding_size = embedding.get_shape().as_list()[-1]
