@@ -117,3 +117,15 @@ tmtagsHistory
 *.sublime-project
 *.sublime-workspace
 .bundle
+
+# TF events
+events/*
+!events/.keep
+
+# TF records
+tfrecord/*
+!tfrecord/.keep
+
+# images
+images/*
+!images/.keep
