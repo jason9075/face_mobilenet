@@ -35,7 +35,7 @@ def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3, s
         diff = tf.subtract(new_zy, zy)
         body = tf.scatter_nd(ordinal_y, diff, cos_t.get_shape())
 
-        updated_logits = tf.add(cos_t, body)
+        updated_logits = tf.add(cos_t, body, name='combine_loss_output')
 
     return updated_logits
 
@@ -55,15 +55,15 @@ def loss_val():
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        print(f'weight:\n{sess.run(weight)}\n\n')
+        # print(f'weight:\n{sess.run(weight)}\n\n')
 
         fc7_my = my_impl(gt_labels, emb, weight, (1.0, 0.0, 0.0, 64))
-        print(f'origin:\n{sess.run(fc7_my)}\n')
+        # print(f'origin:\n{sess.run(fc7_my)}\n')
 
         fc7_mxnet = mxnet_function(gt_labels, num_class, emb, weight, paras)
-        print(f'mx:\n{sess.run(fc7_mxnet)}\n')
+        # print(f'mx:\n{sess.run(fc7_mxnet)}\n')
         fc7_my = my_impl(gt_labels, emb, weight, paras)
-        print(f'my:\n{sess.run(fc7_my)}\n')
+        # print(f'my:\n{sess.run(fc7_my)}\n')
 
 
 def mxnet_function(gt_labels, num_class, embedding, weights, paras):

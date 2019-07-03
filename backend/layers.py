@@ -1,7 +1,12 @@
+import platform
+
 import numpy as np
 import tensorflow as tf
 
-DEVICE = '/cpu:0'
+if platform.system() == 'Linux':
+    DEVICE = '/gpu:0'
+else:
+    DEVICE = '/cpu:0'
 D_TYPE = tf.float32
 CUDNN_ON_GPU = True
 BIAS_INIT = tf.constant_initializer(0.0)

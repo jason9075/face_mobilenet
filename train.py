@@ -45,11 +45,12 @@ def main():
 
         global_step = tf.Variable(name='global_step', initial_value=0, trainable=False)
         inc_op = tf.assign_add(global_step, 1, name='increment_global_step')
-        input_layer = tf.placeholder(name='input_images', shape=[None, input_size[0], input_size[1], 3], dtype=tf.float32)
+        input_layer = tf.placeholder(name='input_images', shape=[None, input_size[0], input_size[1], 3],
+                                     dtype=tf.float32)
         labels = tf.placeholder(name='img_labels', shape=[None, ], dtype=tf.int64)
         trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
 
-        net = MobileNetV2(input_layer)
+        net = MobileNetV2(input_layer, trainable)
 
         logit = combine_loss_val(embedding=net.embedding, gt_labels=labels, num_labels=num_classes,
                                  batch_size=batch_size, m1=1, m2=0, m3=0, s=64)
@@ -107,13 +108,12 @@ def main():
         # 4 begin iteration
         count = 0
         total_accuracy = {}
-
         for i in range(epoch):
             sess.run(iterator.initializer)
             while True:
                 try:
                     images_train, labels_train = sess.run(next_element)
-                    feed_dict = {input_layer: images_train, labels: labels_train}
+                    feed_dict = {input_layer: images_train, labels: labels_train, trainable: True}
                     start = time.time()
                     _, total_loss_val, inference_loss_val, wd_loss_val, _, acc_val = \
                         sess.run([train_op, total_loss, inference_loss, wd_loss, inc_op, acc],
@@ -130,7 +130,6 @@ def main():
 
                     # save summary
                     if count > 0 and count % summary_interval == 0:
-                        feed_dict = {images_train: images_train, labels: labels_train}
                         summary_op_val = sess.run(summary_op, feed_dict=feed_dict)
                         summary.add_summary(summary_op_val, count)
 
