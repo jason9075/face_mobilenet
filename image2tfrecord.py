@@ -24,6 +24,7 @@ def main():
     faces = {f: glob.glob(os.path.join(directory, f, '*.jpg')) for f in faces}
 
     write_record(writer, faces)
+    writer.close()
 
 
 def show_bin_image():
@@ -45,7 +46,6 @@ def show_tfrecord_image():
         image_string = example.features.feature[KEY_IMAGE].bytes_list.value[0]
         img = np.fromstring(image_string, dtype=np.uint8)
         img = cv2.imdecode(img, cv2.IMREAD_COLOR)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         label = example.features.feature[KEY_LABEL].int64_list.value[0]
         text = example.features.feature[KEY_TEXT].bytes_list.value[0]
 
@@ -61,9 +61,7 @@ def write_record(writer, faces):
         for path in paths:
             img = cv2.imread(path)
             img = cv2.resize(img, IMAGE_SIZE)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.imencode('.jpg', img)[1]
-            img = np.array(img).tostring()
+            img = cv2.imencode('.jpg', img)[1].tostring()
             example = tf.train.Example(features=tf.train.Features(feature={
                 KEY_IMAGE: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img])),
                 KEY_LABEL: tf.train.Feature(int64_list=tf.train.Int64List(value=[label])),
@@ -72,7 +70,6 @@ def write_record(writer, faces):
             writer.write(example.SerializeToString())  # Serialize To String
         if i % 10 == 0:
             print('%d person processed' % i)
-    writer.close()
 
 
 if __name__ == '__main__':
