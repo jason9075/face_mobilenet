@@ -23,7 +23,7 @@ def main():
     buffer_size = 10000
     epoch = 10000
     lr = 0.001
-    saver_max_keep = 5
+    saver_max_keep = 10
     momentum = 0.99
     show_info_interval = 20
     summary_interval = 200
@@ -135,6 +135,7 @@ def main():
 
                     # save ckpt files
                     if count > 0 and count % ckpt_interval == 0:
+                        print('epoch: %d,count: %d, saving ckpt.' % (i, count))
                         filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
                         filename = os.path.join(MODEL_OUT_PATH, filename)
                         saver.save(sess, filename)
