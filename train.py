@@ -10,7 +10,7 @@ from backend.loss_function import combine_loss_val
 from backend.mobilenet_v2 import MobileNetV2
 
 MODEL_OUT_PATH = os.path.join('model_out')
-
+REQUIRE_IMPROVEMENT = 1000
 
 def purge():
     for f in glob.glob(os.path.join('events/events*')):
@@ -18,18 +18,19 @@ def purge():
 
 
 def main():
-    num_classes = 19
-    batch_size = 20
-    buffer_size = 10000
+    num_classes = 85742
+    batch_size = 32
+    buffer_size = 30000
     epoch = 10000
     lr = 0.001
     saver_max_keep = 10
     momentum = 0.99
-    show_info_interval = 20
+    show_info_interval = 100
     summary_interval = 200
     ckpt_interval = 1000
-    validate_interval = 200
-    input_size = (224, 224)
+    validate_interval = 2000
+    input_size = (112, 112)
+    last_improvement = 0
 
     purge()
 
@@ -107,10 +108,16 @@ def main():
 
         # 4 begin iteration
         count = 0
+        acc_val = 0
         total_accuracy = {}
         for i in range(epoch):
             sess.run(iterator.initializer)
             while True:
+                # if REQUIRE_IMPROVEMENT < count - last_improvement:
+                #     print("No improvement found in a while, stopping optimization.")
+                #     break
+                if 0.96 < acc_val:
+                    break
                 try:
                     images_train, labels_train = sess.run(next_element)
                     feed_dict = {input_layer: images_train, labels: labels_train, trainable: True}
@@ -142,7 +149,7 @@ def main():
 
                     # validate
                     # if count > 0 and count % validate_interval == 0:
-                    #     results = ver_test(ver_list=ver_list, ver_name_list=ver_name_list, nbatch=count, sess=sess,
+                    #     results = utils.ver_test(ver_list=ver_list, ver_name_list=ver_name_list, nbatch=count, sess=sess,
                     #                        embedding_tensor=embedding_tensor, batch_size=batch_size,
                     #                        feed_dict=feed_dict_test,
                     #                        input_placeholder=images)
@@ -151,11 +158,16 @@ def main():
                     #     if max(results) > 0.996:
                     #         print('best accuracy is %.5f' % max(results))
                     #         filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
-                    #         filename = os.path.join(args.ckpt_path, filename)
+                    #         filename = os.path.join(MODEL_OUT_PATH, filename)
                     #         saver.save(sess, filename)
                 except tf.errors.OutOfRangeError:
                     print("End of epoch %d" % i)
                     break
+                except KeyboardInterrupt:
+                    print('KeyboardInterrupt, saving ckpt.')
+                    filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+                    filename = os.path.join(MODEL_OUT_PATH, filename)
+                    saver.save(sess, filename)
 
 
 if __name__ == '__main__':
