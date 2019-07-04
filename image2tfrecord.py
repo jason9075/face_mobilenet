@@ -11,6 +11,9 @@ import numpy as np
 KEY_IMAGE = 'image_raw'
 KEY_LABEL = 'label'
 KEY_TEXT = 'text'
+KEY_IS_SAME = 'is_same'
+KEY_IMAGE_FIRST = 'image_first'
+KEY_IMAGE_SECOND = 'image_second'
 IMAGE_SIZE = (112, 112)
 SAME_PER_PERSON = 20
 
@@ -76,49 +79,35 @@ def write_record(writer, faces):
 
 def write_ver_record(writer, faces):
     for i, (k, _) in enumerate(faces.items()):
-
         same_pool = [path for (key, paths) in faces.items() if key == k for path in paths]
         diff_pool = [path for (key, paths) in faces.items() if key != k for path in paths]
 
-        print(np.random.choice(same_pool, size=(12, 2), replace=False))
-        # for path in paths:
-        #     img = cv2.imread(path)
-        #     img = cv2.resize(img, IMAGE_SIZE)
-        #     img = cv2.imencode('.jpg', img)[1].tostring()
-        #     example = tf.train.Example(features=tf.train.Features(feature={
-        #         KEY_IMAGE: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img])),
-        #         KEY_LABEL: tf.train.Feature(int64_list=tf.train.Int64List(value=[label])),
-        #         KEY_TEXT: tf.train.Feature(bytes_list=tf.train.BytesList(value=[text]))
-        #     }))
-        #     writer.write(example.SerializeToString())  # Serialize To String
-        # if i % 10 == 0:
-        #     print('%d person processed' % i)
-    print('asdasd')
+        same_pairs = np.random.choice(same_pool, size=(12, 2), replace=False)
+        diff_pairs = np.random.choice(diff_pool, size=(12, 2), replace=False)
+
+        write_pair(same_pairs, writer, is_same=1)
+        write_pair(diff_pairs, writer, is_same=0)
 
 
-def load_bin(db_name, image_size):
-    bins, issame_list = pickle.load(open(os.path.join('images', db_name + '.bin'), 'rb'), encoding='bytes')
-    data_list = []
-    for _ in [0, 1]:
-        data = np.empty((len(issame_list) * 2, image_size[0], image_size[1], 3))
-        data_list.append(data)
-    for i in range(len(issame_list) * 2):
-        _bin = bins[i]
-        img = mx.image.imdecode(_bin).asnumpy()
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        for flip in [0, 1]:
-            if flip == 1:
-                img = np.fliplr(img)
-            data_list[flip][i, ...] = img
-        i += 1
-        if i % 1000 == 0:
-            print('loading bin', i)
-    print(data_list[0].shape)
-    return data_list, issame_list
+def write_pair(same_pairs, writer, is_same):
+    for same1, same2 in same_pairs:
+        img1 = cv2.imread(same1)
+        img1 = cv2.resize(img1, IMAGE_SIZE)
+        img1 = cv2.imencode('.jpg', img1)[1].tostring()
+        img2 = cv2.imread(same2)
+        img2 = cv2.resize(img2, IMAGE_SIZE)
+        img2 = cv2.imencode('.jpg', img2)[1].tostring()
+
+        example = tf.train.Example(features=tf.train.Features(feature={
+            KEY_IMAGE_FIRST: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img1])),
+            KEY_IMAGE_SECOND: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img2])),
+            KEY_IS_SAME: tf.train.Feature(int64_list=tf.train.Int64List(value=[is_same]))
+        }))
+        writer.write(example.SerializeToString())
 
 
 def gen_verification_tfrecord():
-    output_path = os.path.join('tfrecord', 'train.tfrecord')
+    output_path = os.path.join('tfrecord', 'verification.tfrecord')
     writer = tf.python_io.TFRecordWriter(output_path)
 
     directory = os.path.join('images', 'image_db')
@@ -129,7 +118,7 @@ def gen_verification_tfrecord():
     faces = {f: glob.glob(os.path.join(directory, f, '*.jpg')) for f in faces}
 
     write_ver_record(writer, faces)
-    # writer.close()
+    writer.close()
 
 
 if __name__ == '__main__':

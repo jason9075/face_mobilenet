@@ -1,7 +1,8 @@
+import cv2
 import glob
 import os
 import time
-
+import numpy as np
 import tensorflow as tf
 from tensorflow.core.protobuf import config_pb2
 
@@ -10,7 +11,7 @@ from backend.loss_function import combine_loss_val
 from backend.mobilenet_v2 import MobileNetV2
 
 MODEL_OUT_PATH = os.path.join('model_out')
-REQUIRE_IMPROVEMENT = 1000
+
 
 def purge():
     for f in glob.glob(os.path.join('events/events*')):
@@ -30,7 +31,6 @@ def main():
     ckpt_interval = 1000
     validate_interval = 2000
     input_size = (112, 112)
-    last_improvement = 0
 
     purge()
 
@@ -41,6 +41,9 @@ def main():
     data_set = data_set.batch(batch_size)
     iterator = data_set.make_initializable_iterator()
     next_element = iterator.get_next()
+
+    verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+    ver_dataset = utils.get_ver_data(verification_path)
 
     with tf.Session() as sess:
 
@@ -91,33 +94,23 @@ def main():
         for grad, var in grads:
             if grad is not None:
                 summaries.append(tf.summary.histogram(var.op.name + '/gradients', grad))
-        # 3.11.2 add trainabel variable gradients
+
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name, var))
-        # 3.11.3 add loss summary
+
         summaries.append(tf.summary.scalar('inference_loss', inference_loss))
         summaries.append(tf.summary.scalar('wd_loss', wd_loss))
         summaries.append(tf.summary.scalar('total_loss', total_loss))
-        # 3.11.4 add learning rate
         summaries.append(tf.summary.scalar('leraning_rate', lr))
         summary_op = tf.summary.merge(summaries)
-        # 3.12 saver
         saver = tf.train.Saver(max_to_keep=saver_max_keep)
-        # 3.13 init all variables
-        sess.run(tf.global_variables_initializer())
 
-        # 4 begin iteration
+        sess.run(tf.global_variables_initializer())
         count = 0
-        acc_val = 0
-        total_accuracy = {}
+        best_accuracy = 0
         for i in range(epoch):
             sess.run(iterator.initializer)
             while True:
-                # if REQUIRE_IMPROVEMENT < count - last_improvement:
-                #     print("No improvement found in a while, stopping optimization.")
-                #     break
-                if 0.96 < acc_val:
-                    break
                 try:
                     images_train, labels_train = sess.run(next_element)
                     feed_dict = {input_layer: images_train, labels: labels_train, trainable: True}
@@ -148,18 +141,20 @@ def main():
                         saver.save(sess, filename)
 
                     # validate
-                    # if count > 0 and count % validate_interval == 0:
-                    #     results = utils.ver_test(ver_list=ver_list, ver_name_list=ver_name_list, nbatch=count, sess=sess,
-                    #                        embedding_tensor=embedding_tensor, batch_size=batch_size,
-                    #                        feed_dict=feed_dict_test,
-                    #                        input_placeholder=images)
-                    #     print('test accuracy is: ', str(results[0]))
-                    #     total_accuracy[str(count)] = results[0]
-                    #     if max(results) > 0.996:
-                    #         print('best accuracy is %.5f' % max(results))
-                    #         filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
-                    #         filename = os.path.join(MODEL_OUT_PATH, filename)
-                    #         saver.save(sess, filename)
+                    if count > 0 and count % validate_interval == 0:
+                        feed_dict_test = {trainable: False}
+                        val_acc, val_thr = utils.ver_test(data_set=ver_dataset,
+                                                          sess=sess,
+                                                          embedding_tensor=net.embedding,
+                                                          feed_dict=feed_dict_test,
+                                                          input_placeholder=input_layer)
+                        print('test accuracy is: ', str(val_acc), ', thr: ', str(val_thr))
+                        if 0.7 < val_acc and best_accuracy < val_acc:
+                            print('best accuracy is %.5f' % val_acc)
+                            best_accuracy = val_acc
+                            filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
+                            filename = os.path.join(MODEL_OUT_PATH, filename)
+                            saver.save(sess, filename)
                 except tf.errors.OutOfRangeError:
                     print("End of epoch %d" % i)
                     break
@@ -168,7 +163,44 @@ def main():
                     filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
+                    exit(0)
+
+
+def test():
+    with tf.Session() as sess:
+        saver = tf.train.import_meta_graph('InsightFace_iter_334000.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "InsightFace_iter_334000.ckpt")
+
+        image1 = cv2.imread('images/image_db/andy/26bb7b_1.jpg')
+        image2 = cv2.imread('images/image_db/rivon/gen_9f2816_5.jpg')
+
+        image1 = processing(image1)
+        image2 = processing(image2)
+
+        input_tensor = tf.get_default_graph().get_tensor_by_name("input_images:0")
+        trainable = tf.get_default_graph().get_tensor_by_name("trainable_bn:0")
+        embedding_tensor = tf.get_default_graph().get_tensor_by_name("gdc/embedding/Identity:0")
+
+        feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
+        vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
+
+        feed_dict = {input_tensor: np.expand_dims(image2, 0), trainable: False}
+        vector2 = sess.run(embedding_tensor, feed_dict=feed_dict)
+
+        print(vector1)
+        print(vector2)
+
+        print(f'dist: {np.linalg.norm(vector1 - vector2)}')
+
+
+def processing(img):
+    img = cv2.resize(img, (112, 112))
+    # image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
+    img = np.array(img) - 127.5
+    img *= 0.0078125
+    return img
 
 
 if __name__ == '__main__':
     main()
+    # test()
