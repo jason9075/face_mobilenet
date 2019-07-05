@@ -50,7 +50,6 @@ def main():
     with tf.Session() as sess:
 
         global_step = tf.Variable(name='global_step', initial_value=0, trainable=False)
-        inc_op = tf.assign_add(global_step, 1, name='increment_global_step')
         input_layer = tf.placeholder(name='input_images', shape=[None, input_size[0], input_size[1], 3],
                                      dtype=tf.float32)
         labels = tf.placeholder(name='img_labels', shape=[None, ], dtype=tf.int64)
@@ -109,8 +108,8 @@ def main():
                     images_train, labels_train = sess.run(next_element)
                     feed_dict = {input_layer: images_train, labels: labels_train, trainable: True}
                     start = time.time()
-                    _, total_loss_val, inference_loss_val, wd_loss_val, _, acc_val = \
-                        sess.run([train_op, total_loss, inference_loss, wd_loss, inc_op, acc],
+                    _, total_loss_val, inference_loss_val, wd_loss_val, acc_val = \
+                        sess.run([train_op, total_loss, inference_loss, wd_loss, acc],
                                  feed_dict=feed_dict,
                                  options=config_pb2.RunOptions(report_tensor_allocations_upon_oom=True))
                     end = time.time()
@@ -132,7 +131,8 @@ def main():
 
                     # validate
                     if count % validate_interval == 0:
-                        validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver_dataset)
+                        best_accuracy = validate(best_accuracy, count, input_layer, net, saver, sess, trainable,
+                                                 ver_dataset)
 
                     count += 1
                 except tf.errors.OutOfRangeError:
@@ -156,10 +156,11 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver
     print('test accuracy is: ', str(val_acc), ', thr: ', str(val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         print('best accuracy is %.5f' % val_acc)
-        best_accuracy = val_acc
         filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
+        return val_acc
+    return best_accuracy
 
 
 def save_ckpt(count, i, saver, sess):
