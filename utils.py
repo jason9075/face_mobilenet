@@ -67,7 +67,7 @@ def ver_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
     for first, second in zip(first_list, second_list):
         feed_dict[input_placeholder] = np.stack((first, second), axis=0)
         vector_pair = sess.run(embedding_tensor, feed_dict)
-        vector_pair = preprocessing.normalize([vector_pair]).flatten()
+        vector_pair = preprocessing.normalize(vector_pair)
         dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
         dist_list.append(dist)
 
