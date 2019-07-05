@@ -1,7 +1,7 @@
 import cv2
-
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+from sklearn import preprocessing
 
 
 def parse_function(example_proto):
@@ -65,12 +65,13 @@ def ver_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
 
     dist_list = []
     for first, second in zip(first_list, second_list):
-        feed_dict[input_placeholder] = np.concatenate((first, second), axis=0)
+        feed_dict[input_placeholder] = np.stack((first, second), axis=0)
         vector_pair = sess.run(embedding_tensor, feed_dict)
+        vector_pair = preprocessing.normalize([vector_pair]).flatten()
         dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
         dist_list.append(dist)
 
-    thresholds = np.arange(0, 4, 0.1)
+    thresholds = np.arange(0.1, 4, 0.1)
 
     accs = []
     for threshold in thresholds:

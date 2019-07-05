@@ -1,7 +1,8 @@
-import cv2
 import glob
 import os
 import time
+
+import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.core.protobuf import config_pb2
@@ -127,10 +128,10 @@ def main():
                               'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
                               (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val, pre_sec))
                     count += 1
-
                     # save summary
                     if count > 0 and count % summary_interval == 0:
-                        summary_op_val = sess.run(summary_op, feed_dict=feed_dict)
+                        feed_summary_dict = {input_layer: images_train, labels: labels_train, trainable: False}
+                        summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
                         summary.add_summary(summary_op_val, count)
 
                     # save ckpt files
@@ -168,8 +169,8 @@ def main():
 
 def test():
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph('InsightFace_iter_334000.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "InsightFace_iter_334000.ckpt")
+        saver = tf.train.import_meta_graph('InsightFace_iter_84350.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "InsightFace_iter_84350.ckpt")
 
         image1 = cv2.imread('images/image_db/andy/26bb7b_1.jpg')
         image2 = cv2.imread('images/image_db/rivon/gen_9f2816_5.jpg')
@@ -190,12 +191,12 @@ def test():
         print(vector1)
         print(vector2)
 
-        print(f'dist: {np.linalg.norm(vector1 - vector2)}')
+        # print(f'dist: {np.linalg.norm(vector1 - vector2)}')
 
 
 def processing(img):
     img = cv2.resize(img, (112, 112))
-    # image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = np.array(img) - 127.5
     img *= 0.0078125
     return img

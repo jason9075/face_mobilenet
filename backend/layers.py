@@ -44,7 +44,7 @@ def depthwise_conv2d(x, kernel, stride, bn=True, act=tf.identity, name='conv_dw'
             return act(out)
 
 
-def conv_gdc(x, kernel, num_filter, stride, name='conv_gdc', padding='SAME', is_train=True):
+def conv_gdc(x, kernel, num_filter, stride, name='conv_gdc', padding='VALID', is_train=True):
     stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
     shape = [kernel[0], kernel[1], pre_channel, num_filter]

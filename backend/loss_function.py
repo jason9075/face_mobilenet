@@ -15,7 +15,7 @@ def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3, s
         weights = tf.nn.l2_normalize(weights, axis=0)
         embedding = tf.nn.l2_normalize(embedding, axis=1)
 
-        cos_t = tf.matmul(embedding, weights)
+        cos_t = tf.matmul(embedding, weights)  # fully connect dense
         if m1 == 1.0 and m2 == 0.0 and m3 == 0:
             return cos_t * s  # pure softmax
 
