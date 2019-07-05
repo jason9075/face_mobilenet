@@ -12,6 +12,8 @@ from backend.loss_function import combine_loss_val
 from backend.mobilenet_v2 import MobileNetV2
 
 MODEL_OUT_PATH = os.path.join('model_out')
+LR_STEPS = [40000, 60000, 80000]
+ACC_LOW_BOUND = 0.75
 
 
 def purge():
@@ -24,13 +26,12 @@ def main():
     batch_size = 32
     buffer_size = 30000
     epoch = 10000
-    lr = 0.001
     saver_max_keep = 10
     momentum = 0.99
-    show_info_interval = 100
-    summary_interval = 200
-    ckpt_interval = 1000
-    validate_interval = 2000
+    show_info_interval = 500
+    summary_interval = 250
+    ckpt_interval = 5000
+    validate_interval = 2500
     input_size = (112, 112)
 
     purge()
@@ -63,6 +64,13 @@ def main():
         inference_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit, labels=labels))
         wd_loss = tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
         total_loss = inference_loss + wd_loss
+
+        # 3.6 define the learning rate schedule
+        p = int(512.0 / batch_size)
+        lr_steps = [p * val for val in LR_STEPS]
+        print('lr_steps:', lr_steps)
+        lr = tf.train.piecewise_constant(global_step, boundaries=lr_steps, values=[0.001, 0.0005, 0.0003, 0.0001],
+                                         name='lr_schedule')
 
         opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=momentum)
         grads = opt.compute_gradients(total_loss)
@@ -107,45 +115,26 @@ def main():
                                  options=config_pb2.RunOptions(report_tensor_allocations_upon_oom=True))
                     end = time.time()
                     pre_sec = batch_size / (end - start)
+                    if count == 0:
+                        continue
                     # print training information
-                    if count > 0 and count % show_info_interval == 0:
-                        print('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-                              'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
-                              (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val, pre_sec))
-                        feed_dict = {input_layer: images_train[:2], trainable: False}
-                        embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
-                        vector_pair = preprocessing.normalize([embedding_pair[0], embedding_pair[1]])
-                        dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
-                        print('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
-                    count += 1
+                    if count % show_info_interval == 0:
+                        show_info(acc_val, count, i, images_train, inference_loss_val, input_layer, labels_train, net,
+                                  pre_sec, sess, total_loss_val, trainable, wd_loss_val)
                     # save summary
-                    if count > 0 and count % summary_interval == 0:
-                        feed_summary_dict = {input_layer: images_train, labels: labels_train, trainable: False}
-                        summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
-                        summary.add_summary(summary_op_val, count)
+                    if count % summary_interval == 0:
+                        save_summary(count, images_train, input_layer, labels, labels_train, sess, summary, summary_op,
+                                     trainable)
 
                     # save ckpt files
-                    if count > 0 and count % ckpt_interval == 0:
-                        print('epoch: %d,count: %d, saving ckpt.' % (i, count))
-                        filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
-                        filename = os.path.join(MODEL_OUT_PATH, filename)
-                        saver.save(sess, filename)
+                    if count % ckpt_interval == 0:
+                        save_ckpt(count, i, saver, sess)
 
                     # validate
-                    if count > 0 and count % validate_interval == 0:
-                        feed_dict_test = {trainable: False}
-                        val_acc, val_thr = utils.ver_test(data_set=ver_dataset,
-                                                          sess=sess,
-                                                          embedding_tensor=net.embedding,
-                                                          feed_dict=feed_dict_test,
-                                                          input_placeholder=input_layer)
-                        print('test accuracy is: ', str(val_acc), ', thr: ', str(val_thr))
-                        if 0.7 < val_acc and best_accuracy < val_acc:
-                            print('best accuracy is %.5f' % val_acc)
-                            best_accuracy = val_acc
-                            filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
-                            filename = os.path.join(MODEL_OUT_PATH, filename)
-                            saver.save(sess, filename)
+                    if count % validate_interval == 0:
+                        validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver_dataset)
+
+                    count += 1
                 except tf.errors.OutOfRangeError:
                     print("End of epoch %d" % i)
                     break
@@ -155,6 +144,47 @@ def main():
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
                     exit(0)
+
+
+def validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver_dataset):
+    feed_dict_test = {trainable: False}
+    val_acc, val_thr = utils.ver_test(data_set=ver_dataset,
+                                      sess=sess,
+                                      embedding_tensor=net.embedding,
+                                      feed_dict=feed_dict_test,
+                                      input_placeholder=input_layer)
+    print('test accuracy is: ', str(val_acc), ', thr: ', str(val_thr))
+    if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
+        print('best accuracy is %.5f' % val_acc)
+        best_accuracy = val_acc
+        filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
+        filename = os.path.join(MODEL_OUT_PATH, filename)
+        saver.save(sess, filename)
+
+
+def save_ckpt(count, i, saver, sess):
+    print('epoch: %d,count: %d, saving ckpt.' % (i, count))
+    filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+    filename = os.path.join(MODEL_OUT_PATH, filename)
+    saver.save(sess, filename)
+
+
+def save_summary(count, images_train, input_layer, labels, labels_train, sess, summary, summary_op, trainable):
+    feed_summary_dict = {input_layer: images_train, labels: labels_train, trainable: False}
+    summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
+    summary.add_summary(summary_op_val, count)
+
+
+def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer, labels_train, net, pre_sec, sess,
+              total_loss_val, trainable, wd_loss_val):
+    print('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
+          'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
+          (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val, pre_sec))
+    feed_dict = {input_layer: images_train[:2], trainable: False}
+    embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
+    vector_pair = preprocessing.normalize([embedding_pair[0], embedding_pair[1]])
+    dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
+    print('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
 
 
 def test():
