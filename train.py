@@ -1,7 +1,7 @@
 import glob
 import os
 import time
-
+from sklearn import preprocessing
 import cv2
 import numpy as np
 import tensorflow as tf
@@ -58,25 +58,10 @@ def main():
         net = MobileNetV2(input_layer, trainable)
 
         logit = combine_loss_val(embedding=net.embedding, gt_labels=labels, num_labels=num_classes,
-                                 batch_size=batch_size, m1=1, m2=0, m3=0, s=64)
+                                 batch_size=batch_size, m1=1, m2=0.2, m3=0.3, s=64)
+
         inference_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit, labels=labels))
-
-        wd_loss = tf.constant(0, name='wd', dtype=tf.float32)
-        # for weights in tl.layers.get_variables_with_name('W_conv2d', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(weights)
-        # for W in tl.layers.get_variables_with_name('resnet_v1_50/E_DenseLayer/W', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(W)
-        # for weights in tl.layers.get_variables_with_name('embedding_weights', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(weights)
-        # for gamma in tl.layers.get_variables_with_name('gamma', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(gamma)
-        # for beta in tl.layers.get_variables_with_name('beta', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(beta)
-        # for alphas in tl.layers.get_variables_with_name('alphas', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(alphas)
-        # for bias in tl.layers.get_variables_with_name('resnet_v1_50/E_DenseLayer/b', True, True):
-        #     wd_loss += tf.contrib.layers.l2_regularizer(args.weight_deacy)(bias)
-
+        wd_loss = tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
         total_loss = inference_loss + wd_loss
 
         opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=momentum)
@@ -127,6 +112,11 @@ def main():
                         print('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
                               'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
                               (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val, pre_sec))
+                        feed_dict = {input_layer: images_train[:2], trainable: False}
+                        embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
+                        vector_pair = preprocessing.normalize([embedding_pair[0], embedding_pair[1]])
+                        dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
+                        print('(%d vs %d)distance: %.2f' % (dist, labels_train[0], labels_train[1]))
                     count += 1
                     # save summary
                     if count > 0 and count % summary_interval == 0:
@@ -169,8 +159,8 @@ def main():
 
 def test():
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph('InsightFace_iter_84350.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "InsightFace_iter_84350.ckpt")
+        saver = tf.train.import_meta_graph('InsightFace_iter_441998.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "InsightFace_iter_441998.ckpt")
 
         image1 = cv2.imread('images/image_db/andy/26bb7b_1.jpg')
         image2 = cv2.imread('images/image_db/rivon/gen_9f2816_5.jpg')
@@ -188,10 +178,11 @@ def test():
         feed_dict = {input_tensor: np.expand_dims(image2, 0), trainable: False}
         vector2 = sess.run(embedding_tensor, feed_dict=feed_dict)
 
+        vector1 = preprocessing.normalize(vector1)
+        vector2 = preprocessing.normalize(vector2)
+
         print(vector1)
         print(vector2)
-
-        # print(f'dist: {np.linalg.norm(vector1 - vector2)}')
 
 
 def processing(img):

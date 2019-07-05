@@ -44,4 +44,4 @@ class MobileNetV2:
 
         with tf.variable_scope('gdc'):
             net = conv_gdc(net, (7, 7), 512, (1, 1), name='conv_gdc', is_train=is_train)  # (1,1,512)
-            self.embedding = dense(flatten(net), 128, name='embedding')
+            self.embedding = dense(flatten(net), 128, name='embedding', is_train=is_train)
