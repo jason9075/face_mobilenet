@@ -116,7 +116,7 @@ def main():
                         embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
                         vector_pair = preprocessing.normalize([embedding_pair[0], embedding_pair[1]])
                         dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
-                        print('(%d vs %d)distance: %.2f' % (dist, labels_train[0], labels_train[1]))
+                        print('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
                     count += 1
                     # save summary
                     if count > 0 and count % summary_interval == 0:
