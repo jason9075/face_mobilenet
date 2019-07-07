@@ -115,6 +115,7 @@ def main():
                     end = time.time()
                     pre_sec = batch_size / (end - start)
                     if count == 0:
+                        count += 1
                         continue
                     # print training information
                     if count % show_info_interval == 0:
