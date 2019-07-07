@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.core.protobuf import config_pb2
+import argparse
 
 import utils
 from backend.loss_function import combine_loss_val
@@ -21,10 +22,17 @@ def purge():
         os.remove(f)
 
 
+def get_parser():
+    parser = argparse.ArgumentParser(description='parameters to train net')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt')
+    args = parser.parse_args()
+    return args
+
+
 def main():
     num_classes = 85742
     batch_size = 32
-    buffer_size = 30000
+    buffer_size = 10000
     epoch = 10000
     saver_max_keep = 10
     momentum = 0.99
@@ -33,6 +41,8 @@ def main():
     ckpt_interval = 5000
     validate_interval = 2500
     input_size = (112, 112)
+
+    args = get_parser()
 
     purge()
 
@@ -99,6 +109,11 @@ def main():
         saver = tf.train.Saver(max_to_keep=saver_max_keep)
 
         sess.run(tf.global_variables_initializer())
+
+        if args.pretrain != '':  # ex: InsightFace_iter_1110000.ckpt
+            restore_saver = tf.train.Saver()
+            restore_saver.restore(sess, os.path.join(MODEL_OUT_PATH, args.pretrain))
+
         count = 0
         best_accuracy = 0
         for i in range(epoch):
@@ -139,9 +154,9 @@ def main():
                 except tf.errors.OutOfRangeError:
                     print("End of epoch %d" % i)
                     break
-                except KeyboardInterrupt:
-                    print('KeyboardInterrupt, saving ckpt.')
-                    filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+                except Exception as err:
+                    print('Exception, saving ckpt.', err)
+                    filename = 'InsightFace_iter_err_{:d}'.format(count) + '.ckpt'
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
                     exit(0)
