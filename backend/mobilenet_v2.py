@@ -37,7 +37,7 @@ class MobileNetV2:
             net = conv2d(net, (1, 1), 512, (1, 1), act=tf.nn.relu6, name='conv_8_5', is_train=is_train)
 
             net = depthwise_conv2d(net, (3, 3), (2, 2), act=tf.nn.relu6, name='conv_9_dw', is_train=is_train)  # (14,14,512)
-            net = conv2d(net, (1, 1), 1024, (1, 1), act=tf.nn.relu6, name='conv_9', is_train=is_train)  # (7,7,512)
+            net = conv2d(net, (1, 1), 1024, (1, 1), act=tf.nn.relu6, name='conv_9', is_train=is_train)  # (7,7,1024)
 
             net = depthwise_conv2d(net, (3, 3), (1, 1), act=tf.nn.relu6, name='conv_10_dw', is_train=is_train)  # (7,7,1024)
             net = conv2d(net, (1, 1), 1024, (1, 1), act=tf.nn.relu6, name='conv_10', is_train=is_train)  # (7,7,1024)
