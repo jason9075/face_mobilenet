@@ -133,3 +133,7 @@ images/*
 # output model
 model_out/*
 !model_out/.keep
+
+# log file
+log/*
+!log/.keep

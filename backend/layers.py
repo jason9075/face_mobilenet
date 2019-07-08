@@ -11,7 +11,7 @@ D_TYPE = tf.float32
 CUDNN_ON_GPU = True
 BIAS_INIT = tf.constant_initializer(0.0)
 WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.02)
-REGULARIZER = tf.contrib.layers.l2_regularizer(5e-4)
+REGULARIZER = tf.contrib.layers.l2_regularizer(2e-4)
 
 
 def conv2d(x, kernel, num_filter, stride, bn=True, act=tf.identity, name='conv', padding='SAME', is_train=True):

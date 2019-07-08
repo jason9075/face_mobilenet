@@ -1,20 +1,37 @@
+import argparse
 import glob
+import logging
 import os
 import time
-from sklearn import preprocessing
+from datetime import datetime
+import logging.handlers as handlers
+
 import cv2
 import numpy as np
 import tensorflow as tf
+from sklearn import preprocessing
 from tensorflow.core.protobuf import config_pb2
-import argparse
 
 import utils
 from backend.loss_function import combine_loss_val
 from backend.mobilenet_v2 import MobileNetV2
 
 MODEL_OUT_PATH = os.path.join('model_out')
-LR_STEPS = [40000, 60000, 80000]
+INPUT_SIZE = (112, 112)
+LR_STEPS = [4000, 6000, 8000]
 ACC_LOW_BOUND = 0.75
+NUM_CLASSES = 85742
+BATCH_SIZE = 32
+BUFFER_SIZE = 10000
+EPOCH = 10000
+SAVER_MAX_KEEP = 10
+MOMENTUM = 0.99
+
+SHOW_INFO_INTERVAL = 500
+SUMMARY_INTERVAL = 250
+CKPT_INTERVAL = 5000
+VALIDATE_INTERVAL = 2500
+MONITOR_NODE = 'mobilenet_v2/conv_1/w_conv/read:0'
 
 
 def purge():
@@ -24,33 +41,44 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--pretrain', default='', help='pretrain model ckpt')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
 
 
-def main():
-    num_classes = 85742
-    batch_size = 32
-    buffer_size = 10000
-    epoch = 10000
-    saver_max_keep = 10
-    momentum = 0.99
-    show_info_interval = 500
-    summary_interval = 250
-    ckpt_interval = 5000
-    validate_interval = 2500
-    input_size = (112, 112)
+def init_log():
+    global logger
+    filename = os.path.join('log',
+                            datetime.now().strftime("%Y-%m-%d_%H-%M-%S.log"))
 
+    logger = logging.getLogger('MAIN')
+    logger.setLevel(logging.DEBUG)
+    log_handler = handlers.TimedRotatingFileHandler(
+        filename, when='D', interval=1, backupCount=30)
+    log_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        '%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+    log_handler.setFormatter(formatter)
+    logger.addHandler(log_handler)
+
+
+def log(msg, verbose=True):
+    if verbose:
+        print(msg)
+    logger.info(msg)
+
+
+def main():
     args = get_parser()
 
     purge()
+    init_log()
 
     record_path = os.path.join('tfrecord', 'train.tfrecord')
     data_set = tf.data.TFRecordDataset(record_path)
     data_set = data_set.map(utils.parse_function)
-    data_set = data_set.shuffle(buffer_size=buffer_size)
-    data_set = data_set.batch(batch_size)
+    data_set = data_set.shuffle(buffer_size=BUFFER_SIZE)
+    data_set = data_set.batch(BATCH_SIZE)
     iterator = data_set.make_initializable_iterator()
     next_element = iterator.get_next()
 
@@ -59,29 +87,47 @@ def main():
 
     with tf.Session() as sess:
 
-        global_step = tf.Variable(name='global_step', initial_value=0, trainable=False)
-        input_layer = tf.placeholder(name='input_images', shape=[None, input_size[0], input_size[1], 3],
-                                     dtype=tf.float32)
-        labels = tf.placeholder(name='img_labels', shape=[None, ], dtype=tf.int64)
+        global_step = tf.Variable(
+            name='global_step', initial_value=0, trainable=False)
+        input_layer = tf.placeholder(
+            name='input_images',
+            shape=[None, INPUT_SIZE[0], INPUT_SIZE[1], 3],
+            dtype=tf.float32)
+        labels = tf.placeholder(
+            name='img_labels', shape=[
+                None,
+            ], dtype=tf.int64)
         trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
 
         net = MobileNetV2(input_layer, trainable)
 
-        logit = combine_loss_val(embedding=net.embedding, gt_labels=labels, num_labels=num_classes,
-                                 batch_size=batch_size, m1=1, m2=0.2, m3=0.3, s=64)
+        logit = combine_loss_val(
+            embedding=net.embedding,
+            gt_labels=labels,
+            num_labels=NUM_CLASSES,
+            batch_size=BATCH_SIZE,
+            m1=1,
+            m2=0.2,
+            m3=0.3,
+            s=64)
 
-        inference_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit, labels=labels))
-        wd_loss = tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-        total_loss = inference_loss + wd_loss
+        inference_loss = tf.reduce_mean(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=logit, labels=labels), name='inference_loss')
+        wd_loss = tf.reduce_sum(
+            tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), name='wd_loss')
+        total_loss = tf.add(inference_loss, wd_loss, name='total_loss')
 
-        # 3.6 define the learning rate schedule
-        p = int(512.0 / batch_size)
+        p = int(512.0 / BATCH_SIZE)
         lr_steps = [p * val for val in LR_STEPS]
-        print('lr_steps:', lr_steps)
-        lr = tf.train.piecewise_constant(global_step, boundaries=lr_steps, values=[0.001, 0.0005, 0.0003, 0.0001],
-                                         name='lr_schedule')
+        log('lr_steps:{}'.format(lr_steps))
+        lr = tf.train.piecewise_constant(
+            global_step,
+            boundaries=lr_steps,
+            values=[0.001, 0.0005, 0.0003, 0.0001],
+            name='lr_schedule')
 
-        opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=momentum)
+        opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=MOMENTUM)
         grads = opt.compute_gradients(total_loss)
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -89,14 +135,17 @@ def main():
             train_op = opt.apply_gradients(grads, global_step=global_step)
 
         pred = tf.nn.softmax(logit)
-        acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(pred, axis=1), labels), dtype=tf.float32))
+        acc = tf.reduce_mean(
+            tf.cast(
+                tf.equal(tf.argmax(pred, axis=1), labels), dtype=tf.float32))
 
         summary = tf.summary.FileWriter('events/', sess.graph)
         summaries = []
 
         for grad, var in grads:
             if grad is not None:
-                summaries.append(tf.summary.histogram(var.op.name + '/gradients', grad))
+                summaries.append(
+                    tf.summary.histogram(var.op.name + '/gradients', grad))
 
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name, var))
@@ -106,72 +155,94 @@ def main():
         summaries.append(tf.summary.scalar('total_loss', total_loss))
         summaries.append(tf.summary.scalar('leraning_rate', lr))
         summary_op = tf.summary.merge(summaries)
-        saver = tf.train.Saver(max_to_keep=saver_max_keep)
+        saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
 
         sess.run(tf.global_variables_initializer())
 
-        if args.pretrain != '':  # ex: InsightFace_iter_1110000.ckpt
+        if args.pretrain != '':
             restore_saver = tf.train.Saver()
-            restore_saver.restore(sess, os.path.join(MODEL_OUT_PATH, args.pretrain))
+            restore_saver.restore(sess,
+                                  os.path.join(MODEL_OUT_PATH, args.pretrain))
 
         count = 0
         best_accuracy = 0
-        for i in range(epoch):
+        for i in range(EPOCH):
             sess.run(iterator.initializer)
             while True:
                 try:
                     images_train, labels_train = sess.run(next_element)
-                    feed_dict = {input_layer: images_train, labels: labels_train, trainable: True}
+                    feed_dict = {
+                        input_layer: images_train,
+                        labels: labels_train,
+                        trainable: True
+                    }
                     start = time.time()
                     _, total_loss_val, inference_loss_val, wd_loss_val, acc_val = \
                         sess.run([train_op, total_loss, inference_loss, wd_loss, acc],
                                  feed_dict=feed_dict,
                                  options=config_pb2.RunOptions(report_tensor_allocations_upon_oom=True))
+
+                    if MONITOR_NODE != '':
+                        mon_dict = {
+                            input_layer: images_train,
+                            labels: labels_train,
+                            trainable: False
+                        }
+                        mon_node = tf.get_default_graph().get_tensor_by_name(MONITOR_NODE)
+                        node_v = sess.run(mon_node, feed_dict=mon_dict)
+                        log('{} max value: {}'.format(MONITOR_NODE, np.max(node_v)), verbose=False)
                     end = time.time()
-                    pre_sec = batch_size / (end - start)
+                    pre_sec = BATCH_SIZE / (end - start)
                     if count == 0:
                         count += 1
                         continue
                     # print training information
-                    if count % show_info_interval == 0:
-                        show_info(acc_val, count, i, images_train, inference_loss_val, input_layer, labels_train, net,
-                                  pre_sec, sess, total_loss_val, trainable, wd_loss_val)
+                    if count % SHOW_INFO_INTERVAL == 0:
+                        show_info(acc_val, count, i, images_train,
+                                  inference_loss_val, input_layer,
+                                  labels_train, net, pre_sec, sess,
+                                  total_loss_val, trainable, wd_loss_val)
                     # save summary
-                    if count % summary_interval == 0:
-                        save_summary(count, images_train, input_layer, labels, labels_train, sess, summary, summary_op,
+                    if count % SUMMARY_INTERVAL == 0:
+                        save_summary(count, images_train, input_layer, labels,
+                                     labels_train, sess, summary, summary_op,
                                      trainable)
 
                     # save ckpt files
-                    if count % ckpt_interval == 0:
+                    if count % CKPT_INTERVAL == 0:
                         save_ckpt(count, i, saver, sess)
 
                     # validate
-                    if count % validate_interval == 0:
-                        best_accuracy = validate(best_accuracy, count, input_layer, net, saver, sess, trainable,
-                                                 ver_dataset)
+                    if count % VALIDATE_INTERVAL == 0:
+                        best_accuracy = validate(best_accuracy, count,
+                                                 input_layer, net, saver, sess,
+                                                 trainable, ver_dataset)
 
                     count += 1
                 except tf.errors.OutOfRangeError:
-                    print("End of epoch %d" % i)
+                    log("End of epoch %d" % i)
                     break
                 except Exception as err:
-                    print('Exception, saving ckpt.', err)
-                    filename = 'InsightFace_iter_err_{:d}'.format(count) + '.ckpt'
+                    log('Exception, saving ckpt. err: {}'.format(err))
+                    filename = 'InsightFace_iter_err_{:d}'.format(
+                        count) + '.ckpt'
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
                     exit(0)
 
 
-def validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver_dataset):
+def validate(best_accuracy, count, input_layer, net, saver, sess, trainable,
+             ver_dataset):
     feed_dict_test = {trainable: False}
-    val_acc, val_thr = utils.ver_test(data_set=ver_dataset,
-                                      sess=sess,
-                                      embedding_tensor=net.embedding,
-                                      feed_dict=feed_dict_test,
-                                      input_placeholder=input_layer)
-    print('test accuracy is: ', str(val_acc), ', thr: ', str(val_thr))
+    val_acc, val_thr = utils.ver_test(
+        data_set=ver_dataset,
+        sess=sess,
+        embedding_tensor=net.embedding,
+        feed_dict=feed_dict_test,
+        input_placeholder=input_layer)
+    log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
-        print('best accuracy is %.5f' % val_acc)
+        log('best accuracy is %.5f' % val_acc)
         filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
@@ -180,33 +251,42 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, trainable, ver
 
 
 def save_ckpt(count, i, saver, sess):
-    print('epoch: %d,count: %d, saving ckpt.' % (i, count))
+    log('epoch: %d,count: %d, saving ckpt.' % (i, count))
     filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
 
-def save_summary(count, images_train, input_layer, labels, labels_train, sess, summary, summary_op, trainable):
-    feed_summary_dict = {input_layer: images_train, labels: labels_train, trainable: False}
+def save_summary(count, images_train, input_layer, labels, labels_train, sess,
+                 summary, summary_op, trainable):
+    feed_summary_dict = {
+        input_layer: images_train,
+        labels: labels_train,
+        trainable: False
+    }
     summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
     summary.add_summary(summary_op_val, count)
 
 
-def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer, labels_train, net, pre_sec, sess,
-              total_loss_val, trainable, wd_loss_val):
-    print('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-          'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
-          (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val, pre_sec))
+def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
+              labels_train, net, pre_sec, sess, total_loss_val, trainable,
+              wd_loss_val):
+    log('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
+        'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
+        (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
+         pre_sec))
     feed_dict = {input_layer: images_train[:2], trainable: False}
     embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
-    vector_pair = preprocessing.normalize([embedding_pair[0], embedding_pair[1]])
+    vector_pair = preprocessing.normalize(
+        [embedding_pair[0], embedding_pair[1]])
     dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
-    print('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
+    log('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
 
 
 def test():
     with tf.Session() as sess:
-        saver = tf.train.import_meta_graph('InsightFace_iter_441998.ckpt.meta', clear_devices=True)
+        saver = tf.train.import_meta_graph(
+            'InsightFace_iter_441998.ckpt.meta', clear_devices=True)
         saver.restore(sess, "InsightFace_iter_441998.ckpt")
 
         image1 = cv2.imread('images/image_db/andy/26bb7b_1.jpg')
@@ -215,9 +295,11 @@ def test():
         image1 = processing(image1)
         image2 = processing(image2)
 
-        input_tensor = tf.get_default_graph().get_tensor_by_name("input_images:0")
+        input_tensor = tf.get_default_graph().get_tensor_by_name(
+            "input_images:0")
         trainable = tf.get_default_graph().get_tensor_by_name("trainable_bn:0")
-        embedding_tensor = tf.get_default_graph().get_tensor_by_name("gdc/embedding/Identity:0")
+        embedding_tensor = tf.get_default_graph().get_tensor_by_name(
+            "gdc/embedding/Identity:0")
 
         feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
         vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
