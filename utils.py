@@ -71,7 +71,7 @@ def ver_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
         dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
         dist_list.append(dist)
 
-    thresholds = np.arange(0.01, 0.4, 0.01)
+    thresholds = np.arange(0.1, 4.0, 0.1)
 
     accs = []
     for threshold in thresholds:

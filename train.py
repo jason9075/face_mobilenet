@@ -1,10 +1,10 @@
 import argparse
 import glob
 import logging
+import logging.handlers as handlers
 import os
 import time
 from datetime import datetime
-import logging.handlers as handlers
 
 import cv2
 import numpy as np
@@ -19,19 +19,19 @@ from backend.mobilenet_v2 import MobileNetV2
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
 LR_STEPS = [4000, 6000, 8000]
-ACC_LOW_BOUND = 0.75
-NUM_CLASSES = 85742
+ACC_LOW_BOUND = 0.72
+NUM_CLASSES = 2205
 BATCH_SIZE = 32
-BUFFER_SIZE = 10000
+BUFFER_SIZE = 1000
 EPOCH = 10000
 SAVER_MAX_KEEP = 10
 MOMENTUM = 0.99
 
-SHOW_INFO_INTERVAL = 500
-SUMMARY_INTERVAL = 250
-CKPT_INTERVAL = 5000
-VALIDATE_INTERVAL = 2500
-MONITOR_NODE = 'mobilenet_v2/conv_1/w_conv/read:0'
+SHOW_INFO_INTERVAL = 100
+SUMMARY_INTERVAL = 300
+CKPT_INTERVAL = 1000
+VALIDATE_INTERVAL = 500
+MONITOR_NODE = ''
 
 
 def purge():
@@ -171,6 +171,8 @@ def main():
             while True:
                 try:
                     images_train, labels_train = sess.run(next_element)
+                    if images_train.shape[0] != 32:
+                        break
                     feed_dict = {
                         input_layer: images_train,
                         labels: labels_train,
@@ -312,6 +314,8 @@ def test():
 
         print(vector1)
         print(vector2)
+
+        print('dist: ',np.linalg.norm(vector1 - vector2))
 
 
 def processing(img):
