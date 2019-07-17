@@ -3,10 +3,12 @@ import glob
 import logging
 import logging.handlers as handlers
 import os
+import pickle
 import time
 from datetime import datetime
 
 import cv2
+import mxnet as mx
 import numpy as np
 import tensorflow as tf
 from sklearn import preprocessing
@@ -285,14 +287,40 @@ def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
     log('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
 
 
+def load_bin(bin_path):
+    bins, issame_list = pickle.load(open(bin_path, 'rb'), encoding='bytes')
+    data_list = []
+    for _ in [0, 1]:
+        data = np.empty((len(issame_list) * 2, INPUT_SIZE[0], INPUT_SIZE[1], 3))
+        data_list.append(data)
+    for i in range(len(issame_list) * 2):
+        _bin = bins[i]
+        img = mx.image.imdecode(_bin).asnumpy()
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        for flip in [0, 1]:
+            if flip == 1:
+                img = np.fliplr(img)
+            data_list[flip][i, ...] = img
+        i += 1
+        if i % 1000 == 0:
+            print('loading bin', i)
+    print(data_list[0].shape)
+    return data_list, issame_list
+
+
 def test():
+    verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+    ver_dataset = utils.get_ver_data(verification_path)
+
+    lfw_set = load_bin('tfrecord/lfw.bin')
+
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
-            'InsightFace_iter_441998.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "InsightFace_iter_441998.ckpt")
+            'model_out/InsightFace_iter_30000.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "model_out/InsightFace_iter_30000.ckpt")
 
-        image1 = cv2.imread('images/image_db/andy/26bb7b_1.jpg')
-        image2 = cv2.imread('images/image_db/rivon/gen_9f2816_5.jpg')
+        image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
+        image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
 
         image1 = processing(image1)
         image2 = processing(image2)
@@ -303,19 +331,38 @@ def test():
         embedding_tensor = tf.get_default_graph().get_tensor_by_name(
             "gdc/embedding/Identity:0")
 
-        feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
-        vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
+        feed_dict_test = {trainable: False}
+        val_acc, val_thr = utils.ver_test(
+            data_set=ver_dataset,
+            sess=sess,
+            embedding_tensor=embedding_tensor,
+            feed_dict=feed_dict_test,
+            input_placeholder=input_tensor)
 
-        feed_dict = {input_tensor: np.expand_dims(image2, 0), trainable: False}
-        vector2 = sess.run(embedding_tensor, feed_dict=feed_dict)
+        print(f'astra acc:{val_acc}, thr:{val_thr}')
 
-        vector1 = preprocessing.normalize(vector1)
-        vector2 = preprocessing.normalize(vector2)
+        val_acc, val_thr = utils.lfw_test(
+            data_set=lfw_set,
+            sess=sess,
+            embedding_tensor=embedding_tensor,
+            feed_dict=feed_dict_test,
+            input_placeholder=input_tensor)
 
-        print(vector1)
-        print(vector2)
+        print(f'lfw acc:{val_acc}, thr:{val_thr}')
 
-        print('dist: ',np.linalg.norm(vector1 - vector2))
+        # feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
+        # vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
+        #
+        # feed_dict = {input_tensor: np.expand_dims(image2, 0), trainable: False}
+        # vector2 = sess.run(embedding_tensor, feed_dict=feed_dict)
+        #
+        # vector1 = preprocessing.normalize(vector1)
+        # vector2 = preprocessing.normalize(vector2)
+        #
+        # print(vector1)
+        # print(vector2)
+        #
+        # print('dist: ',np.linalg.norm(vector1 - vector2))
 
 
 def processing(img):

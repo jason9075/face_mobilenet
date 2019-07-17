@@ -20,7 +20,8 @@ def conv2d(x, kernel, num_filter, stride, bn=True, act=tf.identity, name='conv',
     shape = [kernel[0], kernel[1], pre_channel, num_filter]
     with tf.device(DEVICE):
         with tf.variable_scope(name):
-            w = tf.get_variable(name='w_conv', shape=shape, initializer=WEIGHT_INIT, dtype=D_TYPE, regularizer=REGULARIZER)
+            w = tf.get_variable(name='w_conv', shape=shape, initializer=WEIGHT_INIT, dtype=D_TYPE,
+                                regularizer=REGULARIZER)
             b = tf.get_variable(name='b_conv', shape=(shape[-1]), initializer=BIAS_INIT, dtype=D_TYPE)
             conv = tf.nn.conv2d(x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
             out = tf.nn.bias_add(conv, b)
@@ -36,7 +37,8 @@ def depthwise_conv2d(x, kernel, stride, bn=True, act=tf.identity, name='conv_dw'
 
     with tf.device(DEVICE):
         with tf.variable_scope(name):
-            w = tf.get_variable(name='w_dw', shape=kernel_shape, initializer=WEIGHT_INIT, dtype=D_TYPE, regularizer=REGULARIZER)
+            w = tf.get_variable(name='w_dw', shape=kernel_shape, initializer=WEIGHT_INIT, dtype=D_TYPE,
+                                regularizer=REGULARIZER)
             b = tf.get_variable(name='b_dw', shape=(x.shape[-1]), initializer=BIAS_INIT, dtype=D_TYPE)
             conv = tf.nn.depthwise_conv2d(x, w, stride, name='d_conv', padding='SAME')
             out = tf.nn.bias_add(conv, b)
@@ -45,13 +47,14 @@ def depthwise_conv2d(x, kernel, stride, bn=True, act=tf.identity, name='conv_dw'
             return act(out)
 
 
-def conv_gdc(x, kernel, num_filter, stride, name='conv_gdc', padding='VALID', is_train=True):
+def conv_gdc(x, kernel, num_filter, stride, num_group=1, name='conv_gdc', padding='SAME', is_train=True):
     stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
-    shape = [kernel[0], kernel[1], pre_channel, num_filter]
+    shape = [kernel[0], kernel[1], pre_channel // num_group, num_filter]
     with tf.device(DEVICE):
         with tf.variable_scope(name):
-            w = tf.get_variable(name='w_conv', shape=shape, initializer=WEIGHT_INIT, dtype=D_TYPE, regularizer=REGULARIZER)
+            w = tf.get_variable(name='w_conv', shape=shape, initializer=WEIGHT_INIT, dtype=D_TYPE,
+                                regularizer=REGULARIZER)
             conv = tf.nn.conv2d(x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
             out = tf.layers.batch_normalization(conv, name='bn', training=is_train)
             return out
@@ -67,7 +70,8 @@ def dense(x, num_classes, bn=True, act=tf.identity, name='dense', is_train=True)
     n_in = int(x.get_shape()[-1])
     with tf.device(DEVICE):
         with tf.variable_scope(name):
-            w = tf.get_variable(name='w_dense', shape=[n_in, num_classes], initializer=WEIGHT_INIT, dtype=D_TYPE, regularizer=REGULARIZER)
+            w = tf.get_variable(name='w_dense', shape=[n_in, num_classes], initializer=WEIGHT_INIT, dtype=D_TYPE,
+                                regularizer=REGULARIZER)
             b = tf.get_variable(name='b_dense', shape=num_classes, initializer=BIAS_INIT, dtype=D_TYPE)
             out = tf.nn.bias_add(tf.matmul(x, w), b)
             if bn:
