@@ -30,6 +30,7 @@ def tf_pre_process_image(img):
 
 
 def pre_process_image(img):
+    img = cv2.resize(img, (112, 112))
     img = np.array(img, dtype=np.float32)
     img -= 127.5
     img *= 0.0078125

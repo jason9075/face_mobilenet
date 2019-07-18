@@ -47,6 +47,23 @@ def depthwise_conv2d(x, kernel, stride, bn=True, act=tf.identity, name='conv_dw'
             return act(out)
 
 
+def group_conv2d(x, kernel, stride, padding, num_groups=1, act=tf.identity, name='group_conv'):
+    input_list = tf.split(x, num_groups, axis=-1)
+    filter_list = tf.split(kernel, num_groups, axis=-1)
+    output_list = []
+
+    for conv_idx, (input_tensor, filter_tensor) in enumerate(zip(input_list, filter_list)):
+        output_list.append(tf.nn.convolution(
+            input_tensor,
+            filter_tensor,
+            padding,
+            strides=stride,
+            name=name
+        ))
+    out = tf.concat(output_list, axis=-1)
+    return act(out)
+
+
 def conv_gdc(x, kernel, num_filter, stride, num_group=1, name='conv_gdc', padding='SAME', is_train=True):
     stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
@@ -55,7 +72,7 @@ def conv_gdc(x, kernel, num_filter, stride, num_group=1, name='conv_gdc', paddin
         with tf.variable_scope(name):
             w = tf.get_variable(name='w_conv', shape=shape, initializer=WEIGHT_INIT, dtype=D_TYPE,
                                 regularizer=REGULARIZER)
-            conv = tf.nn.conv2d(x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
+            conv = group_conv2d(x, w, stride, padding, num_groups=num_group)
             out = tf.layers.batch_normalization(conv, name='bn', training=is_train)
             return out
 
