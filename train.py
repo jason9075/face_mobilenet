@@ -21,7 +21,7 @@ from backend.mobilenet_v2 import MobileNetV2
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
 LR_STEPS = [4000, 6000, 8000]
-ACC_LOW_BOUND = 0.72
+ACC_LOW_BOUND = 0.73
 NUM_CLASSES = 2205
 BATCH_SIZE = 32
 BUFFER_SIZE = 1000
@@ -167,6 +167,7 @@ def main():
                                   os.path.join(MODEL_OUT_PATH, args.pretrain))
 
         count = 0
+        have_best = False
         best_accuracy = 0
         for i in range(EPOCH):
             sess.run(iterator.initializer)
@@ -213,7 +214,7 @@ def main():
                                      trainable)
 
                     # save ckpt files
-                    if count % CKPT_INTERVAL == 0:
+                    if count % CKPT_INTERVAL == 0 and not have_best:
                         save_ckpt(count, i, saver, sess)
 
                     # validate
