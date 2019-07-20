@@ -1,7 +1,7 @@
 from backend.layers import *
 
 
-class MobileNetV2:
+class MobileNetV1:
     def __init__(self, input_layer, is_train):
         with tf.variable_scope('mobilenet_v2'):
             net = conv2d(

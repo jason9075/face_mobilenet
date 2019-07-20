@@ -8,9 +8,9 @@ from sklearn import preprocessing
 
 
 def parse_function(example_proto):
-    features = {'image_raw': tf.FixedLenFeature([], tf.string),
-                'label': tf.FixedLenFeature([], tf.int64)}
-    features = tf.parse_single_example(example_proto, features)
+    features = {'image_raw': tf.io.FixedLenFeature([], tf.string),
+                'label': tf.io.FixedLenFeature([], tf.int64)}
+    features = tf.io.parse_single_example(example_proto, features)
     # You can do more image distortion here for training data
     img = tf.image.decode_jpeg(features['image_raw'])
     img = tf_pre_process_image(img)

@@ -16,7 +16,7 @@ from tensorflow.core.protobuf import config_pb2
 
 import utils
 from backend.loss_function import combine_loss_val
-from backend.mobilenet_v2 import MobileNetV2
+from backend.mobilenet_v1 import MobileNetV1
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
@@ -87,7 +87,10 @@ def main():
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path)
 
-    with tf.Session() as sess:
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+
+    with tf.Session(config=config) as sess:
 
         global_step = tf.Variable(
             name='global_step', initial_value=0, trainable=False)
@@ -101,7 +104,7 @@ def main():
             ], dtype=tf.int64)
         trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
 
-        net = MobileNetV2(input_layer, trainable)
+        net = MobileNetV1(input_layer, trainable)
 
         logit = combine_loss_val(
             embedding=net.embedding,
@@ -159,6 +162,15 @@ def main():
         summary_op = tf.summary.merge(summaries)
         saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
 
+        total_parameters = 0
+        for variable in tf.trainable_variables():
+            shape = variable.get_shape()
+            variable_parameters = 1
+            for dim in shape:
+                variable_parameters *= dim.value
+            total_parameters += variable_parameters
+        print('total parameters count: %d' % total_parameters)
+
         sess.run(tf.global_variables_initializer())
 
         if args.pretrain != '':
@@ -186,7 +198,6 @@ def main():
                         sess.run([train_op, total_loss, inference_loss, wd_loss, acc],
                                  feed_dict=feed_dict,
                                  options=config_pb2.RunOptions(report_tensor_allocations_upon_oom=True))
-
                     if MONITOR_NODE != '':
                         mon_dict = {
                             input_layer: images_train,
