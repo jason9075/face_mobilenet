@@ -11,7 +11,7 @@ D_TYPE = tf.float32
 CUDNN_ON_GPU = True
 BIAS_INIT = tf.constant_initializer(0.0)
 WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.02)
-REGULARIZER = tf.contrib.layers.l2_regularizer(5e-6)
+REGULARIZER = tf.contrib.layers.l2_regularizer(2e-5)
 
 
 def conv2d(x,
@@ -138,7 +138,6 @@ def group_conv2d(x,
                  name='group_conv',
                  padding='SAME',
                  is_train=True):
-    stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
     shape = [kernel[0], kernel[1], pre_channel//num_groups, num_filter]
 
@@ -162,8 +161,8 @@ def group_conv2d(x,
 
             for conv_idx, (input_tensor, filter_tensor) in enumerate(
                     zip(input_list, filter_list)):
-                conv = tf.nn.conv2d(
-                    input_tensor, filter_tensor, stride, padding, name=name)
+                conv = tf.nn.convolution(
+                    input_tensor, filter_tensor, padding, stride, name=name)
                 output_list.append(conv)
             out = tf.concat(output_list, axis=-1)
             out = tf.nn.bias_add(out, b)
@@ -183,7 +182,6 @@ def group_conv2d_nobias(x,
                         name='group_conv',
                         padding='SAME',
                         is_train=True):
-    stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
     shape = [kernel[0], kernel[1], pre_channel//num_groups, num_filter]
 
@@ -202,8 +200,8 @@ def group_conv2d_nobias(x,
 
             for conv_idx, (input_tensor, filter_tensor) in enumerate(
                     zip(input_list, filter_list)):
-                conv = tf.nn.conv2d(
-                    input_tensor, filter_tensor, stride, padding, name=name)
+                conv = tf.nn.convolution(
+                    input_tensor, filter_tensor, padding, stride, name=name)
                 output_list.append(conv)
             out = tf.concat(output_list, axis=-1)
             if bn:
