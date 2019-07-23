@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 
 import cv2
-import mxnet as mx
+# import mxnet as mx
 import numpy as np
 import tensorflow as tf
 from sklearn import preprocessing
@@ -351,7 +351,7 @@ def test():
             feed_dict=feed_dict_test,
             input_placeholder=input_tensor)
 
-        print(f'astra acc:{val_acc}, thr:{val_thr}')
+        print('astra acc: %.2f, thr: %.2f' % (val_acc, val_thr))
 
         val_acc, val_thr = utils.lfw_test(
             data_set=lfw_set,
@@ -360,7 +360,7 @@ def test():
             feed_dict=feed_dict_test,
             input_placeholder=input_tensor)
 
-        print(f'lfw acc:{val_acc}, thr:{val_thr}')
+        print('lfw acc: %.2f, thr: %.2f' % (val_acc, val_thr))
 
         # feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
         # vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)

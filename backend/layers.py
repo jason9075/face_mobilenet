@@ -34,14 +34,8 @@ def conv2d(x,
                 initializer=WEIGHT_INIT,
                 dtype=D_TYPE,
                 regularizer=REGULARIZER)
-            b = tf.get_variable(
-                name='b_conv',
-                shape=num_filter,
-                initializer=BIAS_INIT,
-                dtype=D_TYPE)
-            conv = tf.nn.conv2d(
+            out = tf.nn.conv2d(
                 x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
-            out = tf.nn.bias_add(conv, b)
             if bn:
                 out = tf.layers.batch_normalization(
                     out, name='bn', training=is_train)
@@ -91,7 +85,7 @@ def group_depthwise_conv2d(x,
                            is_train=True):
     stride = [1, stride[0], stride[1], 1]
     num_filter = x.shape[-1]
-    kernel_shape = [kernel[0], kernel[1], num_filter//num_groups, num_filter]
+    kernel_shape = [kernel[0], kernel[1], num_filter // num_groups, num_filter]
     output_list = []
 
     with tf.device(DEVICE):
@@ -139,7 +133,7 @@ def group_conv2d(x,
                  padding='SAME',
                  is_train=True):
     pre_channel = int(x.get_shape()[-1])
-    shape = [kernel[0], kernel[1], pre_channel//num_groups, num_filter]
+    shape = [kernel[0], kernel[1], pre_channel // num_groups, num_filter]
 
     output_list = []
 
@@ -151,11 +145,6 @@ def group_conv2d(x,
                 initializer=WEIGHT_INIT,
                 dtype=D_TYPE,
                 regularizer=REGULARIZER)
-            b = tf.get_variable(
-                name='b_conv',
-                shape=num_filter,
-                initializer=BIAS_INIT,
-                dtype=D_TYPE)
             input_list = tf.split(x, num_groups, axis=-1)
             filter_list = tf.split(w, num_groups, axis=-1)
 
@@ -165,7 +154,6 @@ def group_conv2d(x,
                     input_tensor, filter_tensor, padding, stride, name=name)
                 output_list.append(conv)
             out = tf.concat(output_list, axis=-1)
-            out = tf.nn.bias_add(out, b)
             if bn:
                 out = tf.layers.batch_normalization(
                     out, name='bn', training=is_train)
@@ -183,7 +171,7 @@ def group_conv2d_nobias(x,
                         padding='SAME',
                         is_train=True):
     pre_channel = int(x.get_shape()[-1])
-    shape = [kernel[0], kernel[1], pre_channel//num_groups, num_filter]
+    shape = [kernel[0], kernel[1], pre_channel // num_groups, num_filter]
 
     output_list = []
 
