@@ -138,3 +138,31 @@ def gdc_dense(x,
             if bn:
                 out = tf.layers.batch_normalization(out, training=is_train, gamma_initializer=ONE_INIT)
             return act(out)
+
+
+def res_block(x, expansion_ratio, output_dim, stride, name='res_block', is_train=True, shortcut=True):
+    in_dim = int(x.get_shape()[-1])
+    with tf.variable_scope(name):
+        # pw
+        bottleneck_dim = round(expansion_ratio * in_dim)
+        net = conv2d(x, (1, 1), bottleneck_dim, stride, act=tf.nn.relu6, name='pw')
+        # dw
+        net = depthwise_conv2d(net, (3, 3), stride, act=tf.nn.relu6, name='dw', is_train=is_train)
+        # pw & linear
+        net = conv2d(net, (1, 1), output_dim, stride, act=tf.identity, name='pw_linear')
+
+        # element wise add, only for stride==1
+        if shortcut and stride == 1:
+            if in_dim != output_dim:
+                ins = conv2d(x, (1, 1), output_dim, 1, bn=False, act=tf.identity, name='pw')
+                net = ins + net
+            else:
+                net = x + net
+
+        return net
+
+
+def global_avg(x):
+    with tf.name_scope('global_avg'):
+        net = tf.layers.average_pooling2d(x, x.get_shape()[1:-1], 1)
+        return net
