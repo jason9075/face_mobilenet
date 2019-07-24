@@ -41,8 +41,8 @@ def main():
         frozen_graph = freeze_session(sess, output_names=additional_nodes)
         frozen_graph = optimize_for_inference(sess, frozen_graph, ['trainable_bn'], ['gdc/embedding/Identity'])
 
-        # tf.summary.FileWriter("output_models/", graph=frozen_graph)
-        tf.io.write_graph(frozen_graph, "output_models/", "frozen_model.pb", as_text=False)
+        # tf.summary.FileWriter("model_out/", graph=frozen_graph)
+        tf.io.write_graph(frozen_graph, "model_out/", "frozen_model.pb", as_text=False)
 
     # with tf.Session() as sess:
     #     graph_def = tf.GraphDef()
