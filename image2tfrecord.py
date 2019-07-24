@@ -82,8 +82,9 @@ def write_ver_record(writer, faces):
         same_pool = [path for (key, paths) in faces.items() if key == k for path in paths]
         diff_pool = [path for (key, paths) in faces.items() if key != k for path in paths]
 
-        same_pairs = np.random.choice(same_pool, size=(12, 2), replace=False)
-        diff_pairs = np.random.choice(diff_pool, size=(12, 2), replace=False)
+        same_pairs = np.random.choice(same_pool, size=(len(same_pool)//2, 2), replace=False)
+        diff_face = np.random.choice(diff_pool, size=len(same_pool), replace=False)
+        diff_pairs = np.vstack((same_pool, list(diff_face))).transpose()
 
         write_pair(same_pairs, writer, is_same=1)
         write_pair(diff_pairs, writer, is_same=0)
@@ -110,7 +111,7 @@ def gen_verification_tfrecord():
     output_path = os.path.join('tfrecord', 'verification.tfrecord')
     writer = tf.python_io.TFRecordWriter(output_path)
 
-    directory = os.path.join('images', 'image_db')
+    directory = os.path.join('images', 'ray_marathon')
     faces = [
         o for o in os.listdir(directory) if os.path.isdir(os.path.join(directory, o))
     ]
