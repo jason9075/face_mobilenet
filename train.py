@@ -20,14 +20,18 @@ from backend.mobilenet_v1 import MobileNetV1
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
-LR_STEPS = [4000, 6000, 8000]
-ACC_LOW_BOUND = 0.73
+LR_STEPS = [2000, 3000, 4000]
+ACC_LOW_BOUND = 0.9
 NUM_CLASSES = 2205
 BATCH_SIZE = 32
-BUFFER_SIZE = 1000
-EPOCH = 10000
-SAVER_MAX_KEEP = 10
+BUFFER_SIZE = 500
+EPOCH = 100
+SAVER_MAX_KEEP = 5
 MOMENTUM = 0.99
+M1 = 1.0
+M2 = 0.0
+M3 = 0.0
+SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
 SUMMARY_INTERVAL = 300
@@ -111,10 +115,10 @@ def main():
             gt_labels=labels,
             num_labels=NUM_CLASSES,
             batch_size=BATCH_SIZE,
-            m1=1,
-            m2=0.2,
-            m3=0.3,
-            s=64)
+            m1=M1,
+            m2=M2,
+            m3=M3,
+            s=SCALE)
 
         inference_loss = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -259,7 +263,7 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, trainable,
     log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         log('best accuracy is %.5f' % val_acc)
-        filename = 'InsightFace_iter_best_{:d}'.format(count) + '.ckpt'
+        filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, count) + '.ckpt'
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
         return val_acc
@@ -324,18 +328,18 @@ def test():
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path)
 
-    lfw_set = load_bin('tfrecord/lfw.bin')
+    # lfw_set = load_bin('tfrecord/lfw.bin')
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
-            'model_out/InsightFace_iter_30000.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "model_out/InsightFace_iter_30000.ckpt")
+            'model_out/InsightFace_iter_198000.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "model_out/InsightFace_iter_198000.ckpt")
 
-        image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
-        image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
-
-        image1 = processing(image1)
-        image2 = processing(image2)
+        # image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
+        # image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
+        #
+        # image1 = processing(image1)
+        # image2 = processing(image2)
 
         input_tensor = tf.get_default_graph().get_tensor_by_name(
             "input_images:0")
@@ -353,14 +357,14 @@ def test():
 
         print('astra acc: %.2f, thr: %.2f' % (val_acc, val_thr))
 
-        val_acc, val_thr = utils.lfw_test(
-            data_set=lfw_set,
-            sess=sess,
-            embedding_tensor=embedding_tensor,
-            feed_dict=feed_dict_test,
-            input_placeholder=input_tensor)
-
-        print('lfw acc: %.2f, thr: %.2f' % (val_acc, val_thr))
+        # val_acc, val_thr = utils.lfw_test(
+        #     data_set=lfw_set,
+        #     sess=sess,
+        #     embedding_tensor=embedding_tensor,
+        #     feed_dict=feed_dict_test,
+        #     input_placeholder=input_tensor)
+        #
+        # print('lfw acc: %.2f, thr: %.2f' % (val_acc, val_thr))
 
         # feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
         # vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
