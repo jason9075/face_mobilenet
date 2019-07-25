@@ -140,7 +140,7 @@ def gdc_dense(x,
             return act(out)
 
 
-def res_block(x, expansion_ratio, output_dim, stride, name='res_block', is_train=True, shortcut=True):
+def inv_res_block(x, expansion_ratio, output_dim, stride, name='inv_res_block', is_train=True, shortcut=True):
     in_dim = int(x.get_shape()[-1])
     with tf.variable_scope(name):
         # pw
@@ -152,12 +152,12 @@ def res_block(x, expansion_ratio, output_dim, stride, name='res_block', is_train
         net = conv2d(net, (1, 1), output_dim, stride, act=tf.identity, name='pw_linear')
 
         # element wise add, only for stride==1
-        if shortcut and stride == 1:
+        if shortcut and stride == (1, 1):
             if in_dim != output_dim:
-                ins = conv2d(x, (1, 1), output_dim, 1, bn=False, act=tf.identity, name='pw')
-                net = ins + net
+                ins = conv2d(x, (1, 1), output_dim, (1, 1), bn=False, act=tf.identity, name='shortcut')
+                net = net + ins
             else:
-                net = x + net
+                net = net + x
 
         return net
 
