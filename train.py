@@ -16,8 +16,7 @@ from tensorflow.core.protobuf import config_pb2
 
 import utils
 from backend.loss_function import combine_loss_val
-from backend.mobilenet_v1 import MobileNetV1
-from backend.mobilenet_v2 import MobileNetV2
+from backend.mobilefacenet import MobileFaceNet
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
@@ -109,7 +108,7 @@ def main():
             ], dtype=tf.int64)
         trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
 
-        net = MobileNetV2(input_layer, trainable)
+        net = MobileFaceNet(input_layer, trainable)
 
         logit = combine_loss_val(
             embedding=net.embedding,
