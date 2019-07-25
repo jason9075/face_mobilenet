@@ -23,7 +23,7 @@ INPUT_SIZE = (112, 112)
 LR_STEPS = [2000, 3000, 4000]
 ACC_LOW_BOUND = 0.9
 NUM_CLASSES = 2205
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 BUFFER_SIZE = 500
 EPOCH = 100
 SAVER_MAX_KEEP = 5
@@ -190,7 +190,7 @@ def main():
             while True:
                 try:
                     images_train, labels_train = sess.run(next_element)
-                    if images_train.shape[0] != 32:
+                    if images_train.shape[0] != BATCH_SIZE:
                         break
                     feed_dict = {
                         input_layer: images_train,
