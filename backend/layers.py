@@ -114,7 +114,7 @@ def flatten(x, name='flatten'):
     return out
 
 
-def gdc_dense(x,
+def dense(x,
               num_classes,
               bn=True,
               act=tf.identity,

@@ -16,14 +16,14 @@ from tensorflow.core.protobuf import config_pb2
 
 import utils
 from backend.loss_function import combine_loss_val
-from backend.mobilefacenet import MobileFaceNet
+from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
-LR_STEPS = [2000, 3000, 4000]
+LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.9
 NUM_CLASSES = 2205
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 BUFFER_SIZE = 500
 EPOCH = 100
 SAVER_MAX_KEEP = 5
@@ -80,6 +80,8 @@ def main():
     purge()
     init_log()
 
+    builder = NetBuilder()
+
     record_path = os.path.join('tfrecord', 'train.tfrecord')
     data_set = tf.data.TFRecordDataset(record_path)
     data_set = data_set.map(utils.parse_function)
@@ -108,7 +110,10 @@ def main():
             ], dtype=tf.int64)
         trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
 
-        net = MobileFaceNet(input_layer, trainable)
+        net = builder.input_and_train_node(input_layer, trainable) \
+            .arch_type(Arch.MOBILE_FACE_NET) \
+            .final_layer_type(FinalLayer.GDC) \
+            .build()
 
         logit = combine_loss_val(
             embedding=net.embedding,
@@ -127,12 +132,10 @@ def main():
             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), name='wd_loss')
         total_loss = tf.add(inference_loss, wd_loss, name='total_loss')
 
-        p = int(512.0 / BATCH_SIZE)
-        lr_steps = [p * val for val in LR_STEPS]
-        log('lr_steps:{}'.format(lr_steps))
+        log('lr_steps:{}'.format(LR_STEPS))
         lr = tf.train.piecewise_constant(
             global_step,
-            boundaries=lr_steps,
+            boundaries=LR_STEPS,
             values=[0.001, 0.0005, 0.0003, 0.0001],
             name='lr_schedule')
 

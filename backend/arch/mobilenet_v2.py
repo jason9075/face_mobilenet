@@ -1,8 +1,10 @@
+from backend.arch.basenet import BaseNet
 from backend.layers import *
 
 
-class MobileNetV2:
+class MobileNetV2(BaseNet):
     def __init__(self, input_layer, is_train):
+        super().__init__(input_layer, is_train)
         exp = 6  # expansion ratio
         with tf.variable_scope('mobilenet_v2'):
             net = conv2d(  # (112,112,32)
@@ -71,12 +73,4 @@ class MobileNetV2:
                 is_train=is_train,
                 name='p_wise')
 
-        with tf.variable_scope('gdc'):
-            net = group_conv2d(  # (1,1,512)
-                net, (7, 7),
-                512, (1, 1),
-                num_groups=512,
-                name='conv',
-                is_train=is_train)
-            self.embedding = gdc_dense(
-                flatten(net), 128, name='embedding', is_train=is_train)
+            self.arch_output = net

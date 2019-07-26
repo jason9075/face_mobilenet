@@ -1,10 +1,11 @@
+from backend.arch.basenet import BaseNet
 from backend.layers import *
 
 
 # ref: https://github.com/sirius-ai/MobileFaceNet_TF/blob/master/nets/MobileFaceNet.py
-class MobileFaceNet:
+class MobileFaceNet(BaseNet):
     def __init__(self, input_layer, is_train):
-        blocks = [1, 4, 6, 2]
+        super().__init__(input_layer, is_train)
         with tf.variable_scope('mobilefacenet'):
             net = conv2d(  # (56,56,64)
                 input_layer, (3, 3),
@@ -72,12 +73,4 @@ class MobileFaceNet:
                 is_train=is_train,
                 name='p_wise')
 
-        with tf.variable_scope('gdc'):
-            net = group_conv2d(  # (1,1,512)
-                net, (7, 7),
-                512, (1, 1),
-                num_groups=512,
-                name='conv',
-                is_train=is_train)
-            self.embedding = gdc_dense(
-                flatten(net), 128, name='embedding', is_train=is_train)
+            self.arch_output = net
