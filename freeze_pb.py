@@ -16,9 +16,8 @@ import utils
 
 CKPT_NAME = 'InsightFace_iter_1.ckpt'
 INPUT_ORDER = {
-    "BatchNormWithGlobalNormalization": [
-        "conv_op", "mean_op", "var_op", "beta_op", "gamma_op"
-    ],
+    "BatchNormWithGlobalNormalization":
+        ["conv_op", "mean_op", "var_op", "beta_op", "gamma_op"],
     "FusedBatchNorm": ["conv_op", "gamma_op", "beta_op", "mean_op", "var_op"]
 }
 EPSILON_ATTR = {
@@ -30,23 +29,33 @@ EPSILON_ATTR = {
 def main():
     img = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
 
-    img = utils.pre_process_image(img)
+    img = cv2.resize(img, (112, 112))
+    img = np.array(img, dtype=np.float32)
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
             f'model_out/{CKPT_NAME}.meta', clear_devices=True)
         saver.restore(sess, f"model_out/{CKPT_NAME}")
 
-        additional_nodes = ['gdc/embedding/Identity']
-        frozen_graph = freeze_session(sess, output_names=additional_nodes)
-        frozen_graph = optimize_for_inference(sess, frozen_graph, ['trainable_bn'], ['gdc/embedding/Identity'])
+        input_tensor = tf.get_default_graph().get_tensor_by_name(
+            "input_images:0")
+        with tf.variable_scope('pre_processing'):
+            out = tf.subtract(input_tensor, 127.5)
+            tf.multiply(
+                out, 0.0078125, name='out')
+
+        output_nodes = ['gdc/embedding/Identity', 'pre_processing/out']
+        frozen_graph = freeze_session(sess, output_names=output_nodes)
+        frozen_graph = optimize_for_inference(
+            sess, frozen_graph, ['trainable_bn'],
+            {'input_images': 'pre_processing/out'}, output_nodes)
 
         # tf.summary.FileWriter("model_out/", graph=frozen_graph)
         tf.io.write_graph(frozen_graph, "model_out/", "frozen_model.pb", as_text=False)
 
     # with tf.Session() as sess:
     #     graph_def = tf.GraphDef()
-    #     with gfile.FastGFile('output_models/frozen_model.pb', 'rb') as f:
+    #     with gfile.FastGFile('model_out/frozen_model.pb', 'rb') as f:
     #         graph_def.ParseFromString(f.read())
     #     tf.import_graph_def(graph_def, name='')
     #     input_tensor = tf.get_default_graph().get_tensor_by_name(
@@ -59,7 +68,33 @@ def main():
     #     print(result)
 
 
-def freeze_session(session, keep_var_names=None, output_names=None, blacklist=None, clear_devices=True):
+def replace_pre_processing(input_graph, replace_nodes=None):
+    if not replace_nodes:
+        replace_nodes = {}
+    input_nodes = input_graph.node
+
+    nodes_after_replace = []
+    for node in input_nodes:
+        new_node = node_def_pb2.NodeDef()
+        new_node.CopyFrom(node)
+        input_before_removal = node.input
+        del new_node.input[:]
+        for input_name in input_before_removal:
+            if input_name in replace_nodes:
+                new_input_name = replace_nodes[input_name]
+                new_node.input.append(new_input_name)
+                continue
+            new_node.input.append(input_name)
+        nodes_after_replace.append(new_node)
+
+    return input_graph
+
+
+def freeze_session(session,
+                   keep_var_names=None,
+                   output_names=None,
+                   blacklist=None,
+                   clear_devices=True):
     graph = session.graph
     with graph.as_default():
         # freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
@@ -74,21 +109,27 @@ def freeze_session(session, keep_var_names=None, output_names=None, blacklist=No
         return frozen_graph
 
 
-def optimize_for_inference(sess, input_graph_def, is_train_nodes, output_node_names):
+def optimize_for_inference(sess, input_graph_def, is_train_nodes,
+                           replace_nodes, output_node_names):
     ensure_graph_is_valid(input_graph_def)
     optimized_graph_def = input_graph_def
-    optimized_graph_def = remove_training_nodes(
-        optimized_graph_def, output_node_names, is_train_nodes)
-    optimized_graph_def = remove_unuse_node(sess, optimized_graph_def, output_node_names)
+    optimized_graph_def = modify_nodes(
+        optimized_graph_def, output_node_names, is_train_nodes, replace_nodes)
+    optimized_graph_def = replace_pre_processing(optimized_graph_def,
+                                                 replace_nodes)
+    optimized_graph_def = remove_unuse_node(sess, optimized_graph_def,
+                                            output_node_names)
     optimized_graph_def = fold_batch_norms(optimized_graph_def)
 
     ensure_graph_is_valid(optimized_graph_def)
     return optimized_graph_def
 
+
 def remove_unuse_node(sess, graph_def, output_node_names):
     frozen_graph = tf.graph_util.convert_variables_to_constants(
         sess, graph_def, output_node_names)
     return frozen_graph
+
 
 def ensure_graph_is_valid(graph_def):
     node_map = {}
@@ -101,7 +142,8 @@ def ensure_graph_is_valid(graph_def):
         for input_name in node.input:
             input_node_name = node_name_from_input(input_name)
             if input_node_name not in node_map:
-                raise ValueError("Input for ", node.name, " not found: ", input_name)
+                raise ValueError("Input for ", node.name, " not found: ",
+                                 input_name)
 
 
 def node_name_from_input(node_name):
@@ -114,12 +156,18 @@ def node_name_from_input(node_name):
     return node_name
 
 
-def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None):
+def modify_nodes(input_graph,
+                 protected_nodes=None,
+                 is_train_nodes=None,
+                 replace_nodes = None):
     if not protected_nodes:
         protected_nodes = []
     if not is_train_nodes:
         is_train_nodes = []
+    if not replace_nodes:
+        replace_nodes = {}
 
+    # -------------- remove -------------------
     types_to_remove = {"CheckNumerics": True}
 
     input_nodes = input_graph.node
@@ -143,17 +191,33 @@ def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None
             new_node.input.append(full_input_name)
         nodes_after_removal.append(new_node)
 
+    # -------------- replace -------------------
+    nodes_after_replace = []
+    for node in nodes_after_removal:
+        new_node = node_def_pb2.NodeDef()
+        new_node.CopyFrom(node)
+        input_before_removal = node.input
+        del new_node.input[:]
+        for input_name in input_before_removal:
+            if input_name in replace_nodes and 'pre_processing' not in node.name.split('/'):
+                new_input_name = replace_nodes[input_name]
+                new_node.input.append(new_input_name)
+                continue
+            new_node.input.append(input_name)
+        nodes_after_replace.append(new_node)
+
+    # -------------- splice -------------------
     types_to_splice = {"Identity": True}
     control_input_names = set()
     node_names_with_control_input = set()
-    for node in nodes_after_removal:
+    for node in nodes_after_replace:
         for node_input in node.input:
             if "^" in node_input:
                 control_input_names.add(node_input.replace("^", ""))
                 node_names_with_control_input.add(node.name)
 
     names_to_splice = {}
-    for node in nodes_after_removal:
+    for node in nodes_after_replace:
         if node.op in types_to_splice and node.name not in protected_nodes:
             # We don't want to remove nodes that have control edge inputs, because
             # they might be involved in subtle dependency issues that removing them
@@ -162,11 +226,14 @@ def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None
                 names_to_splice[node.name] = node.input[0]
 
     # We also don't want to remove nodes which are used as control edge inputs.
-    names_to_splice = {name: value for name, value in names_to_splice.items()
-                       if name not in control_input_names}
+    names_to_splice = {
+        name: value
+        for name, value in names_to_splice.items()
+        if name not in control_input_names
+    }
 
     nodes_after_splicing = []
-    for node in nodes_after_removal:
+    for node in nodes_after_replace:
         if node.name in names_to_splice:
             continue
         new_node = node_def_pb2.NodeDef()
@@ -181,6 +248,7 @@ def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None
             new_node.input.append(full_input_name)
         nodes_after_splicing.append(new_node)
 
+    # -------------- select -------------------
     types_to_select = {"Switch": True}
 
     names_to_select = {}
@@ -189,7 +257,9 @@ def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None
             continue
         for node_i in node.input:
             if node_i in is_train_nodes:
-                names_to_select[node.name] = [x for x in node.input if x not in is_train_nodes]
+                names_to_select[node.name] = [
+                    x for x in node.input if x not in is_train_nodes
+                ]
 
     nodes_after_select = []
     for node in nodes_after_splicing:
@@ -207,12 +277,14 @@ def remove_training_nodes(input_graph, protected_nodes=None, is_train_nodes=None
                 new_node.input.append(full_input_name)
         nodes_after_select.append(new_node)
 
+    # --------------- skip ------------------
     types_to_skip = {"Merge": True}
 
     names_to_skip = {}
     for node in nodes_after_select:
         if node.op in types_to_skip:
-            names_to_skip[node.name] = node.input[0]  # FusedBatchNorm_1=0, FusedBatchNorm=1
+            names_to_skip[node.name] = node.input[
+                0]  # FusedBatchNorm_1=0, FusedBatchNorm=1
 
     nodes_after_skip = []
     for node in nodes_after_select:
@@ -246,11 +318,12 @@ def fold_batch_norms(input_graph_def):
     nodes_to_skip = {}
     new_ops = []
     for node in input_graph_def.node:
-        if node.op not in ("BatchNormWithGlobalNormalization", "FusedBatchNorm"):
+        if node.op not in ("BatchNormWithGlobalNormalization",
+                           "FusedBatchNorm"):
             continue
 
-        conv_op = node_from_map(input_node_map,
-                                node.input[INPUT_ORDER[node.op].index("conv_op")])
+        conv_op = node_from_map(
+            input_node_map, node.input[INPUT_ORDER[node.op].index("conv_op")])
         if conv_op.op != "Conv2D" and conv_op.op != "DepthwiseConv2dNative":
             # for prev_input in conv_op.input:
 
@@ -270,8 +343,8 @@ def fold_batch_norms(input_graph_def):
         elif conv_op.op == "DepthwiseConv2dNative":
             channel_count = weights.shape[2] * weights.shape[3]
 
-        mean_op = node_from_map(input_node_map,
-                                node.input[INPUT_ORDER[node.op].index("mean_op")])
+        mean_op = node_from_map(
+            input_node_map, node.input[INPUT_ORDER[node.op].index("mean_op")])
         if mean_op.op != "Const":
             print("Didn't find expected mean Constant input to '%s',"
                   " found %s instead. Maybe because freeze_graph wasn't"
@@ -279,13 +352,14 @@ def fold_batch_norms(input_graph_def):
             continue
         mean_value = values_from_const(mean_op)
         if mean_value.shape != (channel_count,):
-            print("Incorrect shape for mean, found %s, expected %s,"
-                  " for node %s" % (str(mean_value.shape), str(
-                (channel_count,)), node.name))
+            print(
+                "Incorrect shape for mean, found %s, expected %s,"
+                " for node %s" % (str(mean_value.shape), str(
+                    (channel_count,)), node.name))
             continue
 
-        var_op = node_from_map(input_node_map,
-                               node.input[INPUT_ORDER[node.op].index("var_op")])
+        var_op = node_from_map(
+            input_node_map, node.input[INPUT_ORDER[node.op].index("var_op")])
         if var_op.op != "Const":
             print("Didn't find expected var Constant input to '%s',"
                   " found %s instead. Maybe because freeze_graph wasn't"
@@ -298,8 +372,8 @@ def fold_batch_norms(input_graph_def):
                 (channel_count,)), node.name))
             continue
 
-        beta_op = node_from_map(input_node_map,
-                                node.input[INPUT_ORDER[node.op].index("beta_op")])
+        beta_op = node_from_map(
+            input_node_map, node.input[INPUT_ORDER[node.op].index("beta_op")])
         if beta_op.op != "Const":
             print("Didn't find expected beta Constant input to '%s',"
                   " found %s instead. Maybe because freeze_graph wasn't"
@@ -307,13 +381,14 @@ def fold_batch_norms(input_graph_def):
             continue
         beta_value = values_from_const(beta_op)
         if beta_value.shape != (channel_count,):
-            print("Incorrect shape for beta, found %s, expected %s,"
-                  " for node %s" % (str(beta_value.shape), str(
-                (channel_count,)), node.name))
+            print(
+                "Incorrect shape for beta, found %s, expected %s,"
+                " for node %s" % (str(beta_value.shape), str(
+                    (channel_count,)), node.name))
             continue
 
-        gamma_op = node_from_map(input_node_map,
-                                 node.input[INPUT_ORDER[node.op].index("gamma_op")])
+        gamma_op = node_from_map(
+            input_node_map, node.input[INPUT_ORDER[node.op].index("gamma_op")])
         if gamma_op.op != "Const":
             print("Didn't find expected gamma Constant input to '%s',"
                   " found %s instead. Maybe because freeze_graph wasn't"
@@ -321,9 +396,10 @@ def fold_batch_norms(input_graph_def):
             continue
         gamma_value = values_from_const(gamma_op)
         if gamma_value.shape != (channel_count,):
-            print("Incorrect shape for gamma, found %s, expected %s,"
-                  " for node %s" % (str(gamma_value.shape), str(
-                (channel_count,)), node.name))
+            print(
+                "Incorrect shape for gamma, found %s, expected %s,"
+                " for node %s" % (str(gamma_value.shape), str(
+                    (channel_count,)), node.name))
             continue
 
         variance_epsilon_value = node.attr[EPSILON_ATTR[node.op]].f
@@ -336,12 +412,11 @@ def fold_batch_norms(input_graph_def):
         nodes_to_skip[conv_op.name] = True
 
         if scale_after_normalization(node):
-            scale_value = (
-                    (1.0 / np.vectorize(math.sqrt)(var_value + variance_epsilon_value)) *
-                    gamma_value)
+            scale_value = ((1.0 / np.vectorize(
+                math.sqrt)(var_value + variance_epsilon_value)) * gamma_value)
         else:
-            scale_value = (
-                    1.0 / np.vectorize(math.sqrt)(var_value + variance_epsilon_value))
+            scale_value = (1.0 / np.vectorize(
+                math.sqrt)(var_value + variance_epsilon_value))
         offset_value = (-mean_value * scale_value) + beta_value
         scaled_weights = np.copy(weights)
         it = np.nditer(
@@ -354,8 +429,8 @@ def fold_batch_norms(input_graph_def):
         elif conv_op.op == "DepthwiseConv2dNative":
             channel_multiplier = weights.shape[3]
             while not it.finished:
-                current_scale = scale_value[it.multi_index[2] * channel_multiplier +
-                                            it.multi_index[3]]
+                current_scale = scale_value[
+                    it.multi_index[2] * channel_multiplier + it.multi_index[3]]
                 it[0] *= current_scale
                 it.iternext()
         scaled_weights_op = node_def_pb2.NodeDef()
@@ -363,8 +438,9 @@ def fold_batch_norms(input_graph_def):
         scaled_weights_op.name = weights_op.name
         scaled_weights_op.attr["dtype"].CopyFrom(weights_op.attr["dtype"])
         scaled_weights_op.attr["value"].CopyFrom(
-            attr_value_pb2.AttrValue(tensor=tensor_util.make_tensor_proto(
-                scaled_weights, weights.dtype.type, weights.shape)))
+            attr_value_pb2.AttrValue(
+                tensor=tensor_util.make_tensor_proto(
+                    scaled_weights, weights.dtype.type, weights.shape)))
         new_conv_op = node_def_pb2.NodeDef()
         new_conv_op.CopyFrom(conv_op)
         offset_op = node_def_pb2.NodeDef()
@@ -372,15 +448,17 @@ def fold_batch_norms(input_graph_def):
         offset_op.name = conv_op.name + "_bn_offset"
         offset_op.attr["dtype"].CopyFrom(mean_op.attr["dtype"])
         offset_op.attr["value"].CopyFrom(
-            attr_value_pb2.AttrValue(tensor=tensor_util.make_tensor_proto(
-                offset_value, mean_value.dtype.type, offset_value.shape)))
+            attr_value_pb2.AttrValue(
+                tensor=tensor_util.make_tensor_proto(
+                    offset_value, mean_value.dtype.type, offset_value.shape)))
         bias_add_op = node_def_pb2.NodeDef()
         bias_add_op.op = "BiasAdd"
         bias_add_op.name = node.name
         bias_add_op.attr["T"].CopyFrom(conv_op.attr["T"])
         bias_add_op.attr["data_format"].CopyFrom(conv_op.attr["data_format"])
         bias_add_op.input.extend([new_conv_op.name, offset_op.name])
-        new_ops.extend([scaled_weights_op, new_conv_op, offset_op, bias_add_op])
+        new_ops.extend(
+            [scaled_weights_op, new_conv_op, offset_op, bias_add_op])
 
     result_graph_def = graph_pb2.GraphDef()
     for node in input_graph_def.node:
