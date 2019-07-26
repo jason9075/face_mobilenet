@@ -21,8 +21,8 @@ def parse_function(example_proto):
 
 def tf_pre_process_image(img):
     img = tf.reshape(img, shape=(112, 112, 3))
-    r, g, b = tf.split(img, num_or_size_splits=3, axis=-1)
-    img = tf.concat([b, g, r], axis=-1)
+    # r, g, b = tf.split(img, num_or_size_splits=3, axis=-1)
+    # img = tf.concat([b, g, r], axis=-1)
     img = tf.cast(img, dtype=tf.float32)
     img = tf.subtract(img, 127.5)
     img = tf.multiply(img, 0.0078125)
