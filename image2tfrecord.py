@@ -14,6 +14,8 @@ KEY_TEXT = 'text'
 KEY_IS_SAME = 'is_same'
 KEY_IMAGE_FIRST = 'image_first'
 KEY_IMAGE_SECOND = 'image_second'
+KEY_FIRST_NAME = 'first_name'
+KEY_SECOND_NAME = 'second_name'
 IMAGE_SIZE = (112, 112)
 SAME_PER_PERSON = 20
 
@@ -92,16 +94,21 @@ def write_ver_record(writer, faces):
 
 def write_pair(same_pairs, writer, is_same):
     for same1, same2 in same_pairs:
+        print(f'{same1} vs {same2} is {is_same}')
         img1 = cv2.imread(same1)
         img1 = cv2.resize(img1, IMAGE_SIZE)
         img1 = cv2.imencode('.jpg', img1)[1].tostring()
         img2 = cv2.imread(same2)
         img2 = cv2.resize(img2, IMAGE_SIZE)
         img2 = cv2.imencode('.jpg', img2)[1].tostring()
+        first_name = same1.split('/')[-1].encode('utf8')
+        second_name = same2.split('/')[-1].encode('utf8')
 
         example = tf.train.Example(features=tf.train.Features(feature={
             KEY_IMAGE_FIRST: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img1])),
             KEY_IMAGE_SECOND: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img2])),
+            KEY_FIRST_NAME: tf.train.Feature(bytes_list=tf.train.BytesList(value=[first_name])),
+            KEY_SECOND_NAME: tf.train.Feature(bytes_list=tf.train.BytesList(value=[second_name])),
             KEY_IS_SAME: tf.train.Feature(int64_list=tf.train.Int64List(value=[is_same]))
         }))
         writer.write(example.SerializeToString())
@@ -111,7 +118,7 @@ def gen_verification_tfrecord():
     output_path = os.path.join('tfrecord', 'verification.tfrecord')
     writer = tf.python_io.TFRecordWriter(output_path)
 
-    directory = os.path.join('images', 'ray_marathon')
+    directory = os.path.join('images', 'astra_door_align')
     faces = [
         o for o in os.listdir(directory) if os.path.isdir(os.path.join(directory, o))
     ]
