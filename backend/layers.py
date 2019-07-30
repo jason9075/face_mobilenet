@@ -68,8 +68,7 @@ def conv2d_bias(x,
                 name='b_conv',
                 shape=[num_filter],
                 initializer=WEIGHT_INIT,
-                dtype=D_TYPE,
-                regularizer=REGULARIZER)
+                dtype=D_TYPE)
             out = tf.nn.conv2d(
                 x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
             out = tf.nn.bias_add(out, b)
@@ -245,8 +244,7 @@ def fire_module(x, s1, e1, e3, name="fire_module"):
             name='s1_b',
             shape=[s1],
             initializer=BIAS_INIT,
-            dtype=D_TYPE,
-            regularizer=REGULARIZER)
+            dtype=D_TYPE)
 
         e1_w = tf.get_variable(
             name='e1_w',
@@ -258,8 +256,7 @@ def fire_module(x, s1, e1, e3, name="fire_module"):
             name='e1_b',
             shape=[e1],
             initializer=BIAS_INIT,
-            dtype=D_TYPE,
-            regularizer=REGULARIZER)
+            dtype=D_TYPE)
 
         e3_w = tf.get_variable(
             name='e3_w',
@@ -271,8 +268,7 @@ def fire_module(x, s1, e1, e3, name="fire_module"):
             name='e3_b',
             shape=[e1],
             initializer=BIAS_INIT,
-            dtype=D_TYPE,
-            regularizer=REGULARIZER)
+            dtype=D_TYPE)
 
         # squeeze layer
         squeeze_out = tf.nn.conv2d(
