@@ -25,12 +25,12 @@ ACC_LOW_BOUND = 0.9
 NUM_CLASSES = 2205
 BATCH_SIZE = 256
 BUFFER_SIZE = 500
-EPOCH = 100
+EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.99
 M1 = 1.0
-M2 = 0.0
-M3 = 0.0
+M2 = 0.2
+M3 = 0.3
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
@@ -111,7 +111,7 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.MOBILE_FACE_NET) \
+            .arch_type(Arch.SQUEEZE_NET) \
             .final_layer_type(FinalLayer.GDC) \
             .build()
 
@@ -251,7 +251,7 @@ def main():
                         count) + '.ckpt'
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
-                    exit(0)
+                    raise err
 
 
 def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,

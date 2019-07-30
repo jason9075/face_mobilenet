@@ -5,10 +5,11 @@ import tensorflow as tf
 
 if platform.system() == 'Linux':
     DEVICE = '/gpu:0'
+    CUDNN_ON_GPU = True
 else:
     DEVICE = '/cpu:0'
+    CUDNN_ON_GPU = False
 D_TYPE = tf.float32
-CUDNN_ON_GPU = True
 BIAS_INIT = tf.constant_initializer(0.0)
 ONE_INIT = tf.constant_initializer(1.0)
 WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.02)
@@ -37,6 +38,41 @@ def conv2d(x,
                 regularizer=REGULARIZER)
             out = tf.nn.conv2d(
                 x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
+            if bn:
+                out = tf.layers.batch_normalization(
+                    out, name='bn', training=is_train)
+            return act(out)
+
+
+def conv2d_bias(x,
+                kernel,
+                num_filter,
+                stride,
+                bn=True,
+                act=tf.identity,
+                name='conv',
+                padding='SAME',
+                is_train=False):
+    stride = [1, stride[0], stride[1], 1]
+    pre_channel = int(x.get_shape()[-1])
+    shape = [kernel[0], kernel[1], pre_channel, num_filter]
+    with tf.device(DEVICE):
+        with tf.variable_scope(name):
+            w = tf.get_variable(
+                name='w_conv',
+                shape=shape,
+                initializer=WEIGHT_INIT,
+                dtype=D_TYPE,
+                regularizer=REGULARIZER)
+            b = tf.get_variable(
+                name='b_conv',
+                shape=[num_filter],
+                initializer=WEIGHT_INIT,
+                dtype=D_TYPE,
+                regularizer=REGULARIZER)
+            out = tf.nn.conv2d(
+                x, w, stride, padding, use_cudnn_on_gpu=CUDNN_ON_GPU)
+            out = tf.nn.bias_add(out, b)
             if bn:
                 out = tf.layers.batch_normalization(
                     out, name='bn', training=is_train)
@@ -192,3 +228,87 @@ def global_avg(x):
     with tf.name_scope('global_avg'):
         net = tf.layers.average_pooling2d(x, x.get_shape()[1:-1], 1)
         return net
+
+
+def fire_module(x, s1, e1, e3, name="fire_module"):
+    pre_channel = int(x.get_shape()[-1])
+    strides = [1, 1, 1, 1]
+
+    with tf.variable_scope(name):
+        s1_w = tf.get_variable(
+            name='s1_w',
+            shape=[1, 1, pre_channel, s1],
+            initializer=WEIGHT_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+        s1_b = tf.get_variable(
+            name='s1_b',
+            shape=[s1],
+            initializer=BIAS_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+
+        e1_w = tf.get_variable(
+            name='e1_w',
+            shape=[1, 1, s1, e1],
+            initializer=WEIGHT_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+        e1_b = tf.get_variable(
+            name='e1_b',
+            shape=[e1],
+            initializer=BIAS_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+
+        e3_w = tf.get_variable(
+            name='e3_w',
+            shape=[3, 3, s1, e3],
+            initializer=WEIGHT_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+        e3_b = tf.get_variable(
+            name='e3_b',
+            shape=[e1],
+            initializer=BIAS_INIT,
+            dtype=D_TYPE,
+            regularizer=REGULARIZER)
+
+        # squeeze layer
+        squeeze_out = tf.nn.conv2d(
+            x, s1_w, strides, padding="VALID", use_cudnn_on_gpu=CUDNN_ON_GPU)
+
+        squeeze_out = tf.nn.relu(tf.nn.bias_add(squeeze_out, s1_b))
+
+        # expand layer
+        expand1 = tf.nn.conv2d(
+            squeeze_out,
+            e1_w,
+            strides,
+            padding="VALID",
+            use_cudnn_on_gpu=CUDNN_ON_GPU)
+        expand1 = tf.nn.relu(tf.nn.bias_add(expand1, e1_b))
+
+        expand3 = tf.nn.conv2d(
+            squeeze_out,
+            e3_w,
+            strides,
+            padding="SAME",
+            use_cudnn_on_gpu=CUDNN_ON_GPU)
+        expand3 = tf.nn.relu(tf.nn.bias_add(expand3, e3_b))
+
+        return tf.concat([expand1, expand3], axis=3)
+
+
+def max_pool(x, filter_size, strides, padding='SAME', name='max_pool'):
+    ksize = [1, filter_size[0], filter_size[1], 1]
+    strides = [1, strides[0], strides[1], 1]
+    return tf.nn.max_pool(
+        x, ksize=ksize, strides=strides, padding=padding, name=name)
+
+
+def avg_pool(x, filter_size, strides, padding='SAME', name='avg_pool'):
+    ksize = [1, filter_size[0], filter_size[1], 1]
+    strides = [1, strides[0], strides[1], 1]
+    return tf.nn.avg_pool(
+        x, ksize=ksize, strides=strides, padding=padding, name=name)

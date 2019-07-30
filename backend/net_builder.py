@@ -3,6 +3,7 @@ from enum import Enum
 from backend.arch.mobilefacenet import MobileFaceNet
 from backend.arch.mobilenet_v1 import MobileNetV1
 from backend.arch.mobilenet_v2 import MobileNetV2
+from backend.arch.squeezenet import SqueezeNet
 from backend.final_layers import *
 
 
@@ -10,6 +11,7 @@ class Arch(Enum):
     MOBILE_NET_V1 = MobileNetV1
     MOBILE_NET_V2 = MobileNetV2
     MOBILE_FACE_NET = MobileFaceNet
+    SQUEEZE_NET = SqueezeNet
 
 
 class FinalLayer(Enum):
