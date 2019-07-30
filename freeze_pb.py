@@ -47,7 +47,7 @@ def main():
         output_nodes = ['gdc/embedding/Identity', 'pre_processing/out']
         frozen_graph = freeze_session(sess, output_names=output_nodes)
         frozen_graph = optimize_for_inference(
-            sess, frozen_graph, ['trainable_bn'],
+            sess, frozen_graph, ['is_training'],
             {'input_images': 'pre_processing/out'}, output_nodes)
 
         # tf.summary.FileWriter("model_out/", graph=frozen_graph)
@@ -60,7 +60,7 @@ def main():
     #     tf.import_graph_def(graph_def, name='')
     #     input_tensor = tf.get_default_graph().get_tensor_by_name(
     #         "input_images:0")
-    #     # trainable = tf.get_default_graph().get_tensor_by_name("trainable_bn:0")
+    #     # is_training = tf.get_default_graph().get_tensor_by_name("is_training:0")
     #     embedding_tensor = tf.get_default_graph().get_tensor_by_name(
     #         "gdc/embedding/Identity:0")
     #     tf.summary.FileWriter("output_models/", graph=tf.get_default_graph())
