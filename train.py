@@ -108,9 +108,9 @@ def main():
             name='img_labels', shape=[
                 None,
             ], dtype=tf.int64)
-        trainable = tf.placeholder(name='trainable_bn', dtype=tf.bool)
+        is_training = tf.placeholder_with_default(False, (), name='is_training')
 
-        net = builder.input_and_train_node(input_layer, trainable) \
+        net = builder.input_and_train_node(input_layer, is_training) \
             .arch_type(Arch.MOBILE_FACE_NET) \
             .final_layer_type(FinalLayer.GDC) \
             .build()
@@ -198,7 +198,7 @@ def main():
                     feed_dict = {
                         input_layer: images_train,
                         labels: labels_train,
-                        trainable: True
+                        is_training: True
                     }
                     start = time.time()
                     _, total_loss_val, inference_loss_val, wd_loss_val, acc_val = \
@@ -209,7 +209,7 @@ def main():
                         mon_dict = {
                             input_layer: images_train,
                             labels: labels_train,
-                            trainable: False
+                            is_training: False
                         }
                         mon_node = tf.get_default_graph().get_tensor_by_name(MONITOR_NODE)
                         node_v = sess.run(mon_node, feed_dict=mon_dict)
@@ -224,12 +224,12 @@ def main():
                         show_info(acc_val, count, i, images_train,
                                   inference_loss_val, input_layer,
                                   labels_train, net, pre_sec, sess,
-                                  total_loss_val, trainable, wd_loss_val)
+                                  total_loss_val, is_training, wd_loss_val)
                     # save summary
                     if count % SUMMARY_INTERVAL == 0:
                         save_summary(count, images_train, input_layer, labels,
                                      labels_train, sess, summary, summary_op,
-                                     trainable)
+                                     is_training)
 
                     # save ckpt files
                     if count % CKPT_INTERVAL == 0 and not have_best:
@@ -239,7 +239,7 @@ def main():
                     if count % VALIDATE_INTERVAL == 0:
                         best_accuracy = validate(best_accuracy, count,
                                                  input_layer, net, saver, sess,
-                                                 trainable, ver_dataset)
+                                                 is_training, ver_dataset)
 
                     count += 1
                 except tf.errors.OutOfRangeError:
@@ -254,9 +254,9 @@ def main():
                     exit(0)
 
 
-def validate(best_accuracy, count, input_layer, net, saver, sess, trainable,
+def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
              ver_dataset):
-    feed_dict_test = {trainable: False}
+    feed_dict_test = {is_training: False}
     val_acc, val_thr = utils.ver_test(
         data_set=ver_dataset,
         sess=sess,
@@ -281,24 +281,24 @@ def save_ckpt(count, i, saver, sess):
 
 
 def save_summary(count, images_train, input_layer, labels, labels_train, sess,
-                 summary, summary_op, trainable):
+                 summary, summary_op, is_training):
     feed_summary_dict = {
         input_layer: images_train,
         labels: labels_train,
-        trainable: False
+        is_training: False
     }
     summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
     summary.add_summary(summary_op_val, count)
 
 
 def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
-              labels_train, net, pre_sec, sess, total_loss_val, trainable,
+              labels_train, net, pre_sec, sess, total_loss_val, is_training,
               wd_loss_val):
     log('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
         'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
         (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
          pre_sec))
-    feed_dict = {input_layer: images_train[:2], trainable: False}
+    feed_dict = {input_layer: images_train[:2], is_training: False}
     embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
     vector_pair = preprocessing.normalize(
         [embedding_pair[0], embedding_pair[1]])

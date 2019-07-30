@@ -23,7 +23,7 @@ def conv2d(x,
            act=tf.identity,
            name='conv',
            padding='SAME',
-           is_train=True):
+           is_train=False):
     stride = [1, stride[0], stride[1], 1]
     pre_channel = int(x.get_shape()[-1])
     shape = [kernel[0], kernel[1], pre_channel, num_filter]
@@ -49,7 +49,7 @@ def depthwise_conv2d(x,
                      bn=True,
                      act=tf.identity,
                      name='conv_dw',
-                     is_train=True):
+                     is_train=False):
     stride = [1, stride[0], stride[1], 1]
     num_filter = x.shape[-1]
     kernel_shape = [kernel[0], kernel[1], num_filter, 1]
@@ -79,7 +79,7 @@ def group_conv2d(x,
                  act=tf.identity,
                  name='group_conv',
                  padding='SAME',
-                 is_train=True):
+                 is_train=False):
     pre_channel = int(x.get_shape()[-1])
     shape = [kernel[0], kernel[1], pre_channel // num_groups, num_filter]
 
@@ -115,11 +115,11 @@ def flatten(x, name='flatten'):
 
 
 def dense(x,
-              num_classes,
-              bn=True,
-              act=tf.identity,
-              name='dense',
-              is_train=True):
+          num_classes,
+          bn=True,
+          act=tf.identity,
+          name='dense',
+          is_train=False):
     n_in = int(x.get_shape()[-1])
     with tf.device(DEVICE):
         with tf.variable_scope(name):
@@ -136,25 +136,51 @@ def dense(x,
                 dtype=D_TYPE)
             out = tf.nn.bias_add(tf.matmul(x, w), b)
             if bn:
-                out = tf.layers.batch_normalization(out, training=is_train, gamma_initializer=ONE_INIT)
+                out = tf.layers.batch_normalization(
+                    out, training=is_train, gamma_initializer=ONE_INIT)
             return act(out)
 
 
-def inv_res_block(x, expansion_ratio, output_dim, stride, name='inv_res_block', is_train=True, shortcut=True):
+def inv_res_block(x,
+                  expansion_ratio,
+                  output_dim,
+                  stride,
+                  name='inv_res_block',
+                  is_train=False,
+                  shortcut=True):
     in_dim = int(x.get_shape()[-1])
     with tf.variable_scope(name):
         # pw
         bottleneck_dim = round(expansion_ratio * in_dim)
-        net = conv2d(x, (1, 1), bottleneck_dim, stride, act=tf.nn.relu6, name='pw')
+        net = conv2d(
+            x, (1, 1),
+            bottleneck_dim,
+            stride,
+            act=tf.nn.relu6,
+            name='pw',
+            is_train=is_train)
         # dw
-        net = depthwise_conv2d(net, (3, 3), stride, act=tf.nn.relu6, name='dw', is_train=is_train)
+        net = depthwise_conv2d(
+            net, (3, 3), stride, act=tf.nn.relu6, name='dw', is_train=is_train)
         # pw & linear
-        net = conv2d(net, (1, 1), output_dim, stride, act=tf.identity, name='pw_linear')
+        net = conv2d(
+            net, (1, 1),
+            output_dim,
+            stride,
+            act=tf.identity,
+            name='pw_linear',
+            is_train=is_train)
 
         # element wise add, only for stride==1
         if shortcut and stride == (1, 1):
             if in_dim != output_dim:
-                ins = conv2d(x, (1, 1), output_dim, (1, 1), bn=False, act=tf.identity, name='shortcut')
+                ins = conv2d(
+                    x, (1, 1),
+                    output_dim, (1, 1),
+                    bn=False,
+                    act=tf.identity,
+                    name='shortcut',
+                    is_train=is_train)
                 net = net + ins
             else:
                 net = net + x
