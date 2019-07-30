@@ -37,7 +37,7 @@ def pre_process_image(img):
     return img
 
 
-def get_ver_data(record_path):
+def get_ver_data(record_path, preprocessing=True):
     record_iterator = tf.python_io.tf_record_iterator(path=record_path)
     first_list = []
     second_list = []
@@ -48,13 +48,15 @@ def get_ver_data(record_path):
         image_string = example.features.feature['image_first'].bytes_list.value[0]
         img = np.fromstring(image_string, dtype=np.uint8)
         img_first = cv2.imdecode(img, cv2.IMREAD_COLOR)
-        img_first = pre_process_image(img_first)
+        if preprocessing:
+            img_first = pre_process_image(img_first)
         first_list.append(img_first)
 
         image_string = example.features.feature['image_second'].bytes_list.value[0]
         img = np.fromstring(image_string, dtype=np.uint8)
         img_second = cv2.imdecode(img, cv2.IMREAD_COLOR)
-        img_second = pre_process_image(img_second)
+        if preprocessing:
+            img_second = pre_process_image(img_second)
         second_list.append(img_second)
 
         is_same = example.features.feature['is_same'].int64_list.value[0]
