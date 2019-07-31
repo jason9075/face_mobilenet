@@ -21,16 +21,16 @@ from backend.net_builder import NetBuilder, Arch, FinalLayer
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
 LR_STEPS = [80000, 120000, 160000]
-ACC_LOW_BOUND = 0.9
+ACC_LOW_BOUND = 0.85
 NUM_CLASSES = 2205
 BATCH_SIZE = 256
 BUFFER_SIZE = 500
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
-MOMENTUM = 0.99
+MOMENTUM = 0.9
 M1 = 1.0
-M2 = 0.2
-M3 = 0.3
+M2 = 0.0
+M3 = 0.0
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
@@ -111,7 +111,7 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.SQUEEZE_NET) \
+            .arch_type(Arch.MOBILE_NET_V2) \
             .final_layer_type(FinalLayer.GDC) \
             .build()
 
@@ -179,6 +179,7 @@ def main():
         print('total parameters count: %d' % total_parameters)
 
         sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
 
         if args.pretrain != '':
             restore_saver = tf.train.Saver()

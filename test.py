@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import face_recognition as fr
 
-CKPT_NAME = 'InsightFace_iter_18000.ckpt'
+CKPT_NAME = 'InsightFace_iter_85000.ckpt'
 
 
 def eval_by_ckpt(verification_name):
@@ -68,5 +68,5 @@ def ver_dlib(data_set):
 
 
 if __name__ == '__main__':
-    # eval_by_ckpt('verification.tfrecord')
-    eval_by_dlib('ver_marathon.tfrecord')
+    eval_by_ckpt('ver_marathon.tfrecord')
+    # eval_by_dlib('ver_marathon.tfrecord')

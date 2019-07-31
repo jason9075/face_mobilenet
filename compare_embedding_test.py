@@ -5,7 +5,7 @@ import tensorflow as tf
 
 import utils
 
-CKPT_NAME = 'InsightFace_iter_2000.ckpt'
+CKPT_NAME = 'InsightFace_iter_18000.ckpt'
 
 
 def main():
@@ -24,15 +24,14 @@ def main():
 
         input_tensor = tf.get_default_graph().get_tensor_by_name(
             "input_images:0")
-        is_training = tf.get_default_graph().get_tensor_by_name("is_training:0")
         embedding_tensor = tf.get_default_graph().get_tensor_by_name(
             "gdc/embedding/Identity:0")
 
-        f1 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_1, axis=0), is_training: False})[0]
+        f1 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_1, axis=0)})[0]
         f1 = sklearn.preprocessing.normalize(np.expand_dims(f1, 0)).flatten()
         print('--->', f1)
 
-        f2 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_2, axis=0), is_training: False})[0]
+        f2 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_2, axis=0)})[0]
         f2 = sklearn.preprocessing.normalize(np.expand_dims(f2, 0)).flatten()
         print('--->', f2)
 
