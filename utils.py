@@ -11,10 +11,12 @@ def parse_function(example_proto):
     features = {'image_raw': tf.io.FixedLenFeature([], tf.string),
                 'label': tf.io.FixedLenFeature([], tf.int64)}
     features = tf.io.parse_single_example(example_proto, features)
-    # You can do more image distortion here for training data
     img = tf.image.decode_jpeg(features['image_raw'])
-    img = tf_pre_process_image(img)
+    img = tf.image.random_brightness(img, 0.2)
+    img = tf.image.random_saturation(img, 0.6, 1.6)
+    img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
+    img = tf_pre_process_image(img)
     label = tf.cast(features['label'], tf.int64)
     return img, label
 
