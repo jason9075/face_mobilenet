@@ -67,6 +67,7 @@ def init_log():
                             datetime.now().strftime("%Y-%m-%d_%H-%M-%S.log"))
 
     logger = logging.getLogger('MAIN')
+    logger.propagate = False
     logger.setLevel(logging.DEBUG)
     log_handler = handlers.TimedRotatingFileHandler(
         filename, when='D', interval=1, backupCount=30)
