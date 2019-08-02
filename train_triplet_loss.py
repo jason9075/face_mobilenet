@@ -23,9 +23,9 @@ EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 
-PEOPLE_PER_BATCH = 9  # must be divisible by 3
-IMAGES_PER_PERSON = 10
-BATCH_SIZE = 42  # must be divisible by 3
+PEOPLE_PER_BATCH = 90  # must be divisible by 3
+IMAGES_PER_PERSON = 3
+BATCH_SIZE = 90  # must be divisible by 3
 EMBEDDING_SIZE = 128
 NUM_PREPROCESS_THREADS = 4
 ALPHA = 0.2  # Positive to negative triplet distance margin.
@@ -55,7 +55,7 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--data-dir', default='./images/astra_door_align/', help='training data path')
+    parser.add_argument('--data-dir', default='./images/ray_marathon/', help='training data path')
     parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
@@ -145,7 +145,7 @@ def main():
         labels_batch = tf.identity(labels_batch, 'label_batch')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.MOBILE_FACE_NET) \
+            .arch_type(Arch.MOBILE_NET_V2) \
             .final_layer_type(FinalLayer.GDC) \
             .build()
 
@@ -222,7 +222,7 @@ def main():
                     while batch_idx < epoch_size:
                         # Select
                         image_paths, num_per_class = sample_people(dataset, PEOPLE_PER_BATCH, IMAGES_PER_PERSON)
-                        print('Running forward pass on sampled images: ', end='')
+                        # print('Running forward pass on sampled images: ', end='')
                         start_time = time.time()
                         nrof_examples = PEOPLE_PER_BATCH * IMAGES_PER_PERSON
                         labels_array = np.reshape(np.arange(nrof_examples), (-1, 3))
@@ -240,14 +240,14 @@ def main():
                             emb = sess.run([net.embedding], feed_dict={input_layer: imgs, is_training: True})
                             emb_array[labs, :] = emb
 
-                        print('%.3f' % (time.time() - start_time))
-                        print('Selecting suitable triplets for training')
+                        # print('%.3f' % (time.time() - start_time))
+                        # print('Selecting suitable triplets for training')
                         triplets, nrof_random_negs, nrof_triplets = select_triplets(emb_array, num_per_class,
                                                                                     image_paths, PEOPLE_PER_BATCH,
                                                                                     ALPHA)
                         selection_time = time.time() - start_time
-                        print('(nrof_random_negs, nrof_triplets) = (%d, %d): time=%.3f seconds' %
-                              (nrof_random_negs, nrof_triplets, selection_time))
+                        # print('(nrof_random_negs, nrof_triplets) = (%d, %d): time=%.3f seconds' %
+                        #       (nrof_random_negs, nrof_triplets, selection_time))
 
                         # Training
                         nrof_batches = int(np.ceil(nrof_triplets * 3 / BATCH_SIZE))
