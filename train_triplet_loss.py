@@ -4,16 +4,11 @@ import itertools
 import logging
 import logging.handlers as handlers
 import os
-import pickle
 import time
 from datetime import datetime
 
-import cv2
-# import mxnet as mx
 import numpy as np
 import tensorflow as tf
-from sklearn import preprocessing
-from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.ops import data_flow_ops
 
 import utils
@@ -24,15 +19,9 @@ MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
 LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.85
-NUM_CLASSES = 2205
-BUFFER_SIZE = 500
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
-M1 = 1.0
-M2 = 0.0
-M3 = 0.0
-SCALE = 64
 
 PEOPLE_PER_BATCH = 9  # must be divisible by 3
 IMAGES_PER_PERSON = 10
@@ -41,14 +30,13 @@ EMBEDDING_SIZE = 128
 NUM_PREPROCESS_THREADS = 4
 ALPHA = 0.2  # Positive to negative triplet distance margin.
 
-SHOW_INFO_INTERVAL = 1
+SHOW_INFO_INTERVAL = 1000
 SUMMARY_INTERVAL = 300
 CKPT_INTERVAL = 1000
 VALIDATE_INTERVAL = 2000
-MONITOR_NODE = ''
 
 
-class ImageClass():
+class ImageClass:
     def __init__(self, name, image_paths):
         self.name = name
         self.image_paths = image_paths
@@ -241,7 +229,6 @@ def main():
                         image_paths_array = np.reshape(np.expand_dims(np.array(image_paths), 1), (-1, 3))
                         sess.run(enqueue_op,
                                  {image_paths_placeholder: image_paths_array, labels_placeholder: labels_array})
-                        print(f'enqueue: {image_paths_array.shape}')
 
                         emb_array = np.zeros((nrof_examples, EMBEDDING_SIZE))
                         nrof_batches = int(np.ceil(nrof_examples / BATCH_SIZE))
@@ -249,7 +236,6 @@ def main():
                             batch_size = min(nrof_examples - i * BATCH_SIZE, BATCH_SIZE)
                             imgs, labs = sess.run([image_batch, labels_batch],
                                                   feed_dict={batch_size_placeholder: batch_size})
-                            print(f'dequeue: {imgs.shape}')
 
                             emb = sess.run([net.embedding], feed_dict={input_layer: imgs, is_training: True})
                             emb_array[labs, :] = emb
@@ -270,7 +256,6 @@ def main():
                         triplet_paths_array = np.reshape(np.expand_dims(np.array(triplet_paths), 1), (-1, 3))
                         sess.run(enqueue_op,
                                  {image_paths_placeholder: triplet_paths_array, labels_placeholder: labels_array})
-                        print(f'enqueue: {triplet_paths_array.shape}')
                         nrof_examples = len(triplet_paths)
                         i = 0
                         emb_array = np.zeros((nrof_examples, EMBEDDING_SIZE))
@@ -279,7 +264,6 @@ def main():
                             batch_size = min(nrof_examples - i * BATCH_SIZE, BATCH_SIZE)
                             imgs, labs = sess.run([image_batch, labels_batch],
                                                   feed_dict={batch_size_placeholder: batch_size})
-                            print(f'dequeue: {imgs.shape}')
                             feed_dict = {input_layer: imgs, is_training: True}
                             total_loss_val, inference_loss_val, wd_loss_val, _, step, emb = sess.run(
                                 [total_loss, inference_loss, wd_loss, train_op, global_step, embeddings],
@@ -295,10 +279,7 @@ def main():
                                           total_loss_val, inference_loss_val, wd_loss_val, duration, emb)
                             # save summary
                             if step % SUMMARY_INTERVAL == 0:
-                                pass
-                                # save_summary(step, images_train, input_layer, labels,
-                                #              labels_train, sess, summary, summary_op,
-                                #              is_training)
+                                save_summary(step, imgs, input_layer, sess, summary, summary_op)
 
                             # save ckpt files
                             if step % CKPT_INTERVAL == 0 and not have_best:
@@ -344,12 +325,10 @@ def save_ckpt(step, i, saver, sess):
     saver.save(sess, filename)
 
 
-def save_summary(step, images_train, input_layer, labels, labels_train, sess,
-                 summary, summary_op, is_training):
+def save_summary(step, images_train, input_layer, sess,
+                 summary, summary_op):
     feed_summary_dict = {
-        input_layer: images_train,
-        labels: labels_train,
-        is_training: False
+        input_layer: images_train
     }
     summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
     summary.add_summary(summary_op_val, step)
@@ -449,71 +428,5 @@ def select_triplets(embeddings, nrof_images_per_class, image_paths, people_per_b
     return triplets, num_trips, len(triplets)
 
 
-def test():
-    verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    ver_dataset = utils.get_ver_data(verification_path)
-
-    # lfw_set = load_bin('tfrecord/lfw.bin')
-
-    with tf.Session() as sess:
-        saver = tf.train.import_meta_graph(
-            'model_out/InsightFace_iter_198000.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "model_out/InsightFace_iter_198000.ckpt")
-
-        # image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
-        # image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
-        #
-        # image1 = processing(image1)
-        # image2 = processing(image2)
-
-        input_tensor = tf.get_default_graph().get_tensor_by_name(
-            "input_images:0")
-        trainable = tf.get_default_graph().get_tensor_by_name("trainable_bn:0")
-        embedding_tensor = tf.get_default_graph().get_tensor_by_name(
-            "gdc/embedding/Identity:0")
-
-        feed_dict_test = {trainable: False}
-        val_acc, val_thr = utils.ver_test(
-            data_set=ver_dataset,
-            sess=sess,
-            embedding_tensor=embedding_tensor,
-            feed_dict=feed_dict_test,
-            input_placeholder=input_tensor)
-
-        print('astra acc: %.2f, thr: %.2f' % (val_acc, val_thr))
-
-        # val_acc, val_thr = utils.lfw_test(
-        #     data_set=lfw_set,
-        #     sess=sess,
-        #     embedding_tensor=embedding_tensor,
-        #     feed_dict=feed_dict_test,
-        #     input_placeholder=input_tensor)
-        #
-        # print('lfw acc: %.2f, thr: %.2f' % (val_acc, val_thr))
-
-        # feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
-        # vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)
-        #
-        # feed_dict = {input_tensor: np.expand_dims(image2, 0), trainable: False}
-        # vector2 = sess.run(embedding_tensor, feed_dict=feed_dict)
-        #
-        # vector1 = preprocessing.normalize(vector1)
-        # vector2 = preprocessing.normalize(vector2)
-        #
-        # print(vector1)
-        # print(vector2)
-        #
-        # print('dist: ',np.linalg.norm(vector1 - vector2))
-
-
-def processing(img):
-    img = cv2.resize(img, (112, 112))
-    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = np.array(img) - 127.5
-    img *= 0.0078125
-    return img
-
-
 if __name__ == '__main__':
     main()
-    # test()
