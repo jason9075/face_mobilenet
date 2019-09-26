@@ -10,7 +10,7 @@ class MobileNetV2(BaseNet):
             net = conv2d(  # (112,112,32)
                 input_layer, (3, 3),
                 32, (1, 1),
-                act=tf.nn.relu6,
+                act=ACT_FUNC,
                 name='conv_1',
                 is_train=is_train)
 
@@ -87,7 +87,7 @@ class MobileNetV2(BaseNet):
             net = conv2d(  # (7,7,1024)
                 net, (1, 1),
                 1024, (1, 1),
-                act=tf.nn.relu6,
+                act=ACT_FUNC,
                 name='p_wise',
                 is_train=is_train)
 

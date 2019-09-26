@@ -14,6 +14,7 @@ BIAS_INIT = tf.constant_initializer(0.0)
 ONE_INIT = tf.constant_initializer(1.0)
 WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.02)
 REGULARIZER = tf.contrib.layers.l2_regularizer(5e-6)
+ACT_FUNC = tf.nn.relu6
 
 
 def conv2d(x,
@@ -191,12 +192,12 @@ def inv_res_block(x,
             x, (1, 1),
             bottleneck_dim,
             stride,
-            act=tf.nn.relu6,
+            act=ACT_FUNC,
             name='pw',
             is_train=is_train)
         # dw
         net = depthwise_conv2d(
-            net, (3, 3), stride, act=tf.nn.relu6, name='dw', is_train=is_train)
+            net, (3, 3), stride, act=ACT_FUNC, name='dw', is_train=is_train)
         # pw & linear
         net = conv2d(
             net, (1, 1),
