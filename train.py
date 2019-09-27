@@ -22,7 +22,7 @@ MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
 LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.85
-NUM_CLASSES = 2205
+NUM_CLASSES = 1037
 BATCH_SIZE = 256
 BUFFER_SIZE = 500
 EPOCH = 10000
@@ -139,7 +139,7 @@ def main():
             values=[0.001, 0.0005, 0.0003, 0.0001],
             name='lr_schedule')
 
-        opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=MOMENTUM)
+        opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
         grads = opt.compute_gradients(total_loss)
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -162,10 +162,11 @@ def main():
         for var in tf.trainable_variables():
             summaries.append(tf.summary.histogram(var.op.name, var))
 
-        summaries.append(tf.summary.scalar('inference_loss', inference_loss))
-        summaries.append(tf.summary.scalar('wd_loss', wd_loss))
-        summaries.append(tf.summary.scalar('total_loss', total_loss))
-        summaries.append(tf.summary.scalar('leraning_rate', lr))
+        summaries.append(tf.summary.scalar('loss/inference', inference_loss))
+        summaries.append(tf.summary.scalar('loss/weight_decay', wd_loss))
+        summaries.append(tf.summary.scalar('loss/total', total_loss))
+        summaries.append(tf.summary.scalar('learning_rate', lr))
+        summaries.append(tf.summary.scalar('accuracy', acc))
         summary_op = tf.summary.merge(summaries)
         saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
 

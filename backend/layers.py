@@ -12,8 +12,9 @@ else:
 D_TYPE = tf.float32
 BIAS_INIT = tf.constant_initializer(0.0)
 ONE_INIT = tf.constant_initializer(1.0)
-WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.02)
-REGULARIZER = tf.contrib.layers.l2_regularizer(5e-6)
+WEIGHT_INIT = tf.contrib.layers.xavier_initializer()
+# WEIGHT_INIT = tf.truncated_normal_initializer(stddev=0.1)
+REGULARIZER = tf.contrib.layers.l2_regularizer(0.01)
 ACT_FUNC = tf.nn.relu6
 
 
