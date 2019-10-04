@@ -41,6 +41,8 @@ class SqueezeNet(BaseNet):
 
             net = fire_module(net, s1=64, e1=256, e3=256, name='fire9')  # (14,14,512)
 
+            net = tf.layers.dropout(net, training=is_train, name='dropout')
+
             net = conv2d_bias(  # (14,14,512)
                 net, (1, 1),
                 512, (1, 1),

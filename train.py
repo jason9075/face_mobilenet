@@ -23,14 +23,14 @@ INPUT_SIZE = (112, 112)
 LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.85
 NUM_CLASSES = 1037
-BATCH_SIZE = 256
+BATCH_SIZE = 512
 BUFFER_SIZE = 500
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 M1 = 1.0
-M2 = 0.0
-M3 = 0.0
+M2 = 0.1
+M3 = 0.1
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
@@ -111,7 +111,7 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.MOBILE_NET_V2) \
+            .arch_type(Arch.SQUEEZE_NET) \
             .final_layer_type(FinalLayer.GDC) \
             .build()
 
