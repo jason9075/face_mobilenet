@@ -90,8 +90,8 @@ def main():
     iterator = data_set.make_initializable_iterator()
     next_element = iterator.get_next()
 
-    # verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    # ver_dataset = utils.get_ver_data(verification_path)
+    verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+    ver_dataset = utils.get_ver_data(verification_path)
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
