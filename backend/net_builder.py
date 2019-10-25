@@ -4,6 +4,7 @@ from backend.arch.mobilefacenet import MobileFaceNet
 from backend.arch.mobilenet_v1 import MobileNetV1
 from backend.arch.mobilenet_v2 import MobileNetV2
 from backend.arch.squeezenet import SqueezeNet
+from backend.arch.resnet50 import ResNet50
 from backend.final_layers import *
 
 
@@ -12,6 +13,7 @@ class Arch(Enum):
     MOBILE_NET_V2 = MobileNetV2
     MOBILE_FACE_NET = MobileFaceNet
     SQUEEZE_NET = SqueezeNet
+    RES_NET50 = ResNet50
 
 
 class FinalLayer(Enum):

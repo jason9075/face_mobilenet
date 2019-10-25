@@ -19,7 +19,7 @@ from backend.loss_function import combine_loss_val
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
-INPUT_SIZE = (112, 112)
+INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.85
 NUM_CLASSES = 1037
@@ -90,8 +90,8 @@ def main():
     iterator = data_set.make_initializable_iterator()
     next_element = iterator.get_next()
 
-    verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    ver_dataset = utils.get_ver_data(verification_path)
+    # verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+    # ver_dataset = utils.get_ver_data(verification_path)
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -111,8 +111,8 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.SQUEEZE_NET) \
-            .final_layer_type(FinalLayer.GDC) \
+            .arch_type(Arch.RES_NET50) \
+            .final_layer_type(FinalLayer.G) \
             .build()
 
         logit = combine_loss_val(
