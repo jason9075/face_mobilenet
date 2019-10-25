@@ -23,7 +23,7 @@ INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 120000, 160000]
 ACC_LOW_BOUND = 0.85
 NUM_CLASSES = 1037
-BATCH_SIZE = 512
+BATCH_SIZE = 32
 BUFFER_SIZE = 500
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
@@ -387,7 +387,7 @@ def test():
 
 
 def processing(img):
-    img = cv2.resize(img, (112, 112))
+    img = cv2.resize(img, (224, 224))
     # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = np.array(img) - 127.5
     img *= 0.0078125

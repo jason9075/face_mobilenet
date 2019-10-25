@@ -11,7 +11,7 @@ def parse_function(example_proto):
     features = {'image_raw': tf.io.FixedLenFeature([], tf.string),
                 'label': tf.io.FixedLenFeature([], tf.int64)}
     features = tf.io.parse_single_example(example_proto, features)
-    img = tf.image.decode_jpeg(features['image_raw'])
+    img = tf.image.decode_jpeg(features['image_raw'], dct_method='INTEGER_ACCURATE')
     img = tf.image.random_brightness(img, 0.2)
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
@@ -22,7 +22,7 @@ def parse_function(example_proto):
 
 
 def tf_pre_process_image(img):
-    img = tf.reshape(img, shape=(112, 112, 3))
+    img = tf.reshape(img, shape=(224, 224, 3))
     # r, g, b = tf.split(img, num_or_size_splits=3, axis=-1)
     # img = tf.concat([b, g, r], axis=-1)
     img = tf.cast(img, dtype=tf.float32)
@@ -32,7 +32,7 @@ def tf_pre_process_image(img):
 
 
 def pre_process_image(img):
-    img = cv2.resize(img, (112, 112))
+    img = cv2.resize(img, (224, 224))
     img = np.array(img, dtype=np.float32)
     img -= 127.5
     img *= 0.0078125

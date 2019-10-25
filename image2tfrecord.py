@@ -4,7 +4,7 @@ import random
 import cv2
 import os
 import pickle
-import mxnet as mx
+# import mxnet as mx
 import tensorflow as tf
 import numpy as np
 
@@ -16,7 +16,7 @@ KEY_IMAGE_FIRST = 'image_first'
 KEY_IMAGE_SECOND = 'image_second'
 KEY_FIRST_NAME = 'first_name'
 KEY_SECOND_NAME = 'second_name'
-IMAGE_SIZE = (112, 112)
+IMAGE_SIZE = (224, 224)
 SAME_PER_PERSON = 20
 
 
@@ -130,6 +130,6 @@ def gen_verification_tfrecord():
 
 
 if __name__ == '__main__':
-    # gen_train_tfrecord()
+    gen_train_tfrecord()
     # show_train_tfrecord_image()
-    gen_verification_tfrecord()
+    # gen_verification_tfrecord()
