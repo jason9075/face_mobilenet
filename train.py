@@ -20,7 +20,8 @@ from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (224, 224)
-LR_STEPS = [80000, 120000, 160000]
+LR_STEPS = [80000, 160000, 240000]
+LR_VAL = [0.01, 0.005, 0.001, 0.0005]
 ACC_LOW_BOUND = 0.85
 NUM_CLASSES = 1037
 BATCH_SIZE = 32
@@ -29,8 +30,8 @@ EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 M1 = 1.0
-M2 = 0.1
-M3 = 0.1
+M2 = 0.2
+M3 = 0.3
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
@@ -136,7 +137,7 @@ def main():
         lr = tf.train.piecewise_constant(
             global_step,
             boundaries=LR_STEPS,
-            values=[0.001, 0.0005, 0.0003, 0.0001],
+            values=LR_VAL,
             name='lr_schedule')
 
         opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
@@ -239,9 +240,9 @@ def main():
 
                     # validate
                     if count % VALIDATE_INTERVAL == 0:
-                        best_accuracy = validate(best_accuracy, count,
-                                                 input_layer, net, saver, sess,
-                                                 is_training, ver_dataset)
+                        best_accuracy, have_best = validate(best_accuracy, count,
+                                                            input_layer, net, saver, sess,
+                                                            is_training, ver_dataset)
 
                     count += 1
                 except tf.errors.OutOfRangeError:
@@ -271,8 +272,8 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
         filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, count) + '.ckpt'
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
-        return val_acc
-    return best_accuracy
+        return val_acc, True
+    return best_accuracy, False
 
 
 def save_ckpt(count, i, saver, sess):
