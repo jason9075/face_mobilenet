@@ -49,4 +49,5 @@ class NetBuilder:
     def build(self):
         net = self.arch(self.input_node, self.is_train_node)
         net = self.final_layer(net)
+        # net = tf.nn.relu6(net)
         return net

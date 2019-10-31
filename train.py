@@ -112,7 +112,7 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.RES_NET50) \
+            .arch_type(Arch.SQUEEZE_NET) \
             .final_layer_type(FinalLayer.G) \
             .build()
 
@@ -197,6 +197,7 @@ def main():
                 try:
                     images_train, labels_train = sess.run(next_element)
                     if images_train.shape[0] != BATCH_SIZE:
+                        print('batchsize too high')
                         break
                     feed_dict = {
                         input_layer: images_train,
