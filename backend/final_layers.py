@@ -6,10 +6,9 @@ def gdc(net):
     is_train = net.is_train
 
     with tf.variable_scope('gdc'):
-        net = group_conv2d(  # (1,1,512)
+        net = conv2d(  # (1,1,512)
             input_node, (7, 7),
             512, (1, 1),
-            num_groups=512,
             name='conv',
             is_train=is_train)
         net.embedding = dense(

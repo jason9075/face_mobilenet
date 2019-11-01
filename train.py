@@ -71,7 +71,7 @@ def init_log():
 
 def log(msg, verbose=True):
     if verbose:
-        print(msg)
+        print(datetime.now().strftime("%H-%M-%S: "), msg)
     logger.info(msg)
 
 
@@ -112,7 +112,7 @@ def main():
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.SQUEEZE_NET) \
+            .arch_type(Arch.RES_NET50) \
             .final_layer_type(FinalLayer.G) \
             .build()
 
@@ -242,8 +242,8 @@ def main():
                     # validate
                     if count % VALIDATE_INTERVAL == 0:
                         best_accuracy, is_best = validate(best_accuracy, count,
-                                                            input_layer, net, saver, sess,
-                                                            is_training, ver_dataset)
+                                                          input_layer, net, saver, sess,
+                                                          is_training, ver_dataset)
                         if not have_best and is_best:
                             have_best = is_best
 
@@ -269,9 +269,8 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
         embedding_tensor=net.embedding,
         feed_dict=feed_dict_test,
         input_placeholder=input_layer)
-    log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
+    log('test accuracy is: {}, thr: {}, current best: {}'.format(val_acc, val_thr, best_accuracy))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
-        log('best accuracy is %.5f' % val_acc)
         filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, count) + '.ckpt'
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
