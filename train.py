@@ -241,9 +241,11 @@ def main():
 
                     # validate
                     if count % VALIDATE_INTERVAL == 0:
-                        best_accuracy, have_best = validate(best_accuracy, count,
+                        best_accuracy, is_best = validate(best_accuracy, count,
                                                             input_layer, net, saver, sess,
                                                             is_training, ver_dataset)
+                        if not have_best and is_best:
+                            have_best = is_best
 
                     count += 1
                 except tf.errors.OutOfRangeError:
