@@ -197,7 +197,6 @@ def main():
                 try:
                     images_train, labels_train = sess.run(next_element)
                     if images_train.shape[0] != BATCH_SIZE:
-                        print('batchsize too high')
                         break
                     feed_dict = {
                         input_layer: images_train,
@@ -302,8 +301,8 @@ def save_summary(count, images_train, input_layer, labels, labels_train, sess,
 def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
               labels_train, net, pre_sec, sess, total_loss_val, is_training,
               wd_loss_val):
-    log('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-        'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
+    log('epoch %d, step: %d, total_loss: %.2f, inf_loss is %.2f, weight_loss is %.2f, '
+        'train_acc: %.6f, time %.3f samples/sec' %
         (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
          pre_sec))
     feed_dict = {input_layer: images_train[:2], is_training: False}
