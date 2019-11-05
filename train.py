@@ -19,6 +19,7 @@ from backend.loss_function import combine_loss_val
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
+MODEL = Arch.RES_NET50
 INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 160000, 240000]
 LR_VAL = [0.01, 0.005, 0.001, 0.0005]
@@ -30,12 +31,12 @@ EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 M1 = 1.0
-M2 = 0.2
-M3 = 0.3
+M2 = 0.0
+M3 = 0.0
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
-SUMMARY_INTERVAL = 300
+SUMMARY_INTERVAL = 2000
 CKPT_INTERVAL = 1000
 VALIDATE_INTERVAL = 2000
 MONITOR_NODE = ''
@@ -48,7 +49,7 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: MDL_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
 
@@ -110,9 +111,8 @@ def main():
                 None,
             ], dtype=tf.int64)
         is_training = tf.placeholder_with_default(False, (), name='is_training')
-
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.RES_NET50) \
+            .arch_type(MODEL) \
             .final_layer_type(FinalLayer.G) \
             .build()
 
@@ -140,7 +140,8 @@ def main():
             values=LR_VAL,
             name='lr_schedule')
 
-        opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
+        # opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
+        opt = tf.train.GradientDescentOptimizer(learning_rate=lr)
         grads = opt.compute_gradients(total_loss)
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -188,7 +189,7 @@ def main():
             restore_saver.restore(sess,
                                   os.path.join(MODEL_OUT_PATH, args.pretrain))
 
-        count = 0
+        step = 0
         have_best = False
         best_accuracy = 0
         for i in range(EPOCH):
@@ -219,49 +220,48 @@ def main():
                         log('{} max value: {}'.format(MONITOR_NODE, np.max(node_v)), verbose=False)
                     end = time.time()
                     pre_sec = BATCH_SIZE / (end - start)
-                    if count == 0:
-                        count += 1
+                    if step == 0:
+                        step += 1
                         continue
                     # print training information
-                    if count % SHOW_INFO_INTERVAL == 0:
-                        show_info(acc_val, count, i, images_train,
+                    if step % SHOW_INFO_INTERVAL == 0:
+                        show_info(acc_val, step, i, images_train,
                                   inference_loss_val, input_layer,
                                   labels_train, net, pre_sec, sess,
                                   total_loss_val, is_training, wd_loss_val)
                     # save summary
-                    if count % SUMMARY_INTERVAL == 0:
-                        save_summary(count, images_train, input_layer, labels,
+                    if step % SUMMARY_INTERVAL == 0:
+                        save_summary(step, images_train, input_layer, labels,
                                      labels_train, sess, summary, summary_op,
                                      is_training)
 
                     # save ckpt files
-                    if count % CKPT_INTERVAL == 0 and not have_best:
-                        save_ckpt(count, i, saver, sess)
+                    if step % CKPT_INTERVAL == 0 and not have_best:
+                        save_ckpt(step, i, saver, sess)
 
                     # validate
-                    if count % VALIDATE_INTERVAL == 0:
-                        val_accuracy, is_best = validate(best_accuracy, count,
-                                                          input_layer, net, saver, sess,
-                                                          is_training, ver_dataset)
+                    if step % VALIDATE_INTERVAL == 0:
+                        val_accuracy, is_best = validate(best_accuracy, step,
+                                                         input_layer, net, saver, sess,
+                                                         is_training, ver_dataset)
                         if is_best:
                             best_accuracy = val_accuracy
                         if not have_best and is_best:
                             have_best = is_best
 
-                    count += 1
+                    step += 1
                 except tf.errors.OutOfRangeError:
                     log("End of epoch %d" % i)
                     break
                 except Exception as err:
                     log('Exception, saving ckpt. err: {}'.format(err))
-                    filename = 'InsightFace_iter_err_{:d}'.format(
-                        count) + '.ckpt'
+                    filename = '{:s}_iter_err_{:d}.ckpt'.format(MODEL.name, step)
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
                     raise err
 
 
-def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
+def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
              ver_dataset):
     feed_dict_test = {is_training: False}
     val_acc, val_thr = utils.ver_test(
@@ -273,16 +273,16 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
     log('test accuracy is: {}, thr: {}, last best accuracy: {}.'.format(val_acc, val_thr, best_accuracy))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         log('new best accuracy accuracy is: {}.'.format(val_acc))
-        filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, count) + '.ckpt'
+        filename = '{:s}_best{:.5f}_{:d}.ckpt'.format(MODEL.name, val_acc, step)
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
         return val_acc, True
     return val_acc, False
 
 
-def save_ckpt(count, i, saver, sess):
-    log('epoch: %d,count: %d, saving ckpt.' % (i, count))
-    filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+def save_ckpt(step, i, saver, sess):
+    log('epoch: %d,count: %d, saving ckpt.' % (i, step))
+    filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
@@ -342,8 +342,8 @@ def test():
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
-            'model_out/InsightFace_iter_198000.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "model_out/InsightFace_iter_198000.ckpt")
+            'model_out/xxx.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "model_out/xxx.ckpt")
 
         # image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
         # image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')

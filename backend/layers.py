@@ -18,27 +18,56 @@ REGULARIZER = tf.contrib.layers.l2_regularizer(0.01)
 ACT_FUNC = tf.nn.relu6
 
 
-def resblock(x_init, channels, is_train=False, use_bias=True, down_sample=False, scope='resblock'):
+def resblock(x_init, ch, is_train=False, use_bias=True, down_sample=False, scope='resblock'):
     with tf.variable_scope(scope):
 
-        x = tf.layers.batch_normalization(x_init, training=is_train, name='bn')
-        x = tf.nn.relu(x)
-
         if down_sample:
-            x = tf.layers.conv2d(x, channels, kernel_size=3, strides=2, padding='same', use_bias=use_bias,
-                                 name='conv_0')
-            x_init = tf.layers.conv2d(x_init, channels, kernel_size=1, strides=2, padding='same', use_bias=use_bias,
-                                      name='conv_init')
+            shortcut = tf.layers.conv2d(x_init, ch, kernel_size=1, strides=2, padding='same', use_bias=use_bias,
+                                        name='shortcut')
+            shortcut = tf.layers.batch_normalization(shortcut, training=is_train, name='bn_shortcut')
+            x = tf.layers.conv2d(x_init, ch, kernel_size=3, strides=2, padding='same', use_bias=use_bias, name='conv_0')
 
         else:
-            x = tf.layers.conv2d(x, channels, kernel_size=3, strides=1, padding='same', use_bias=use_bias,
-                                 name='conv_0')
+            shortcut = x_init
+            x = tf.layers.conv2d(x_init, ch, kernel_size=3, strides=1, padding='same', use_bias=use_bias, name='conv_0')
 
-        x = tf.layers.batch_normalization(x, training=is_train, name='batch_norm_1')
+        x = tf.layers.batch_normalization(x, training=is_train, name='bn_0')
         x = tf.nn.relu(x)
-        x = tf.layers.conv2d(x, channels, kernel_size=3, strides=1, padding='same', use_bias=use_bias, name='conv_1')
 
-        return x + x_init
+        x = tf.layers.conv2d(x, ch, kernel_size=3, strides=1, padding='same', use_bias=use_bias, name='conv_1')
+        x = tf.layers.batch_normalization(x, training=is_train, name='bn_1')
+
+        x = x + shortcut
+
+        return tf.nn.relu(x)
+
+
+def bottle_resblock(x, ch, is_train=False, use_bias=True, down_sample=False, scope='bottle_resblock'):
+    with tf.variable_scope(scope):
+
+        if down_sample:
+            strides = 2
+        else:
+            strides = 1
+
+        shortcut = tf.layers.conv2d(x, ch * 4, kernel_size=1, strides=strides, padding='same', use_bias=use_bias,
+                                    name='shortcut')
+        shortcut = tf.layers.batch_normalization(shortcut, training=is_train, name='bn_shortcut')
+
+        x = tf.layers.conv2d(x, ch, kernel_size=1, strides=1, padding='same', use_bias=use_bias, name='conv_0')
+        x = tf.layers.batch_normalization(x, training=is_train, name='bn_0')
+        x = tf.nn.relu(x)
+
+        x = tf.layers.conv2d(x, ch, kernel_size=3, strides=strides, padding='same', use_bias=use_bias, name='conv_1')
+        x = tf.layers.batch_normalization(x, training=is_train, name='bn_1')
+        x = tf.nn.relu(x)
+
+        x = tf.layers.conv2d(x, ch * 4, kernel_size=1, strides=1, padding='same', use_bias=use_bias, name='conv_2')
+        x = tf.layers.batch_normalization(x, training=is_train, name='bn_2')
+
+        x = x + shortcut
+
+        return tf.nn.relu(x)
 
 
 def conv2d(x,

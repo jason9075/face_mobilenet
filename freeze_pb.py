@@ -4,6 +4,7 @@ import timeit
 import cv2
 import math
 import tensorflow as tf
+from sklearn import preprocessing
 
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework import graph_pb2
@@ -14,7 +15,7 @@ import numpy as np
 
 import utils
 
-CKPT_NAME = 'InsightFace_iter_1.ckpt'
+CKPT_NAME = 'InsightFace_iter_best_0.97_8000.ckpt'
 INPUT_ORDER = {
     "BatchNormWithGlobalNormalization":
         ["conv_op", "mean_op", "var_op", "beta_op", "gamma_op"],
@@ -25,13 +26,39 @@ EPSILON_ATTR = {
     "FusedBatchNorm": "epsilon"
 }
 
+OUTPUT = 'pre_processing/out'
+# OUTPUT = 'g_type/embedding/Identity'
 
-def main():
-    img = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
 
-    img = cv2.resize(img, (112, 112))
-    img = np.array(img, dtype=np.float32)
+def test():
+    img_1 = cv2.imread('images/astra_door_align/jason/2019-07-18_17-29-34_jason_278_116_116_9c2e1d_4.jpg')
+    img_1 = cv2.resize(img_1, (224, 224))
+    img_1 = np.array(img_1, dtype=np.float32)
 
+    img_2 = cv2.imread('images/astra_door_align/jason/2019-07-17_18-02-53_jason_319_143_143_9c2e1d_8.jpg')
+    img_2 = cv2.resize(img_2, (224, 224))
+    img_2 = np.array(img_2, dtype=np.float32)
+
+    with tf.Session() as sess:
+        graph_def = tf.GraphDef()
+        with gfile.FastGFile('model_out/frozen_model.pb', 'rb') as f:
+            graph_def.ParseFromString(f.read())
+        tf.import_graph_def(graph_def, name='')
+        input_tensor = tf.get_default_graph().get_tensor_by_name(
+            "input_images:0")
+        # is_training = tf.get_default_graph().get_tensor_by_name("is_training:0")
+        embedding_tensor = tf.get_default_graph().get_tensor_by_name(
+            f"{OUTPUT}:0")
+        tf.summary.FileWriter("output_models/", graph=tf.get_default_graph())
+        result1 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_1, axis=0)})[0]
+        result2 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_2, axis=0)})[0]
+        vector_pair = preprocessing.normalize(
+            [result1, result2])
+        dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
+        print(dist)
+
+
+def freeze():
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
             f'model_out/{CKPT_NAME}.meta', clear_devices=True)
@@ -44,7 +71,7 @@ def main():
             tf.multiply(
                 out, 0.0078125, name='out')
 
-        output_nodes = ['gdc/embedding/Identity', 'pre_processing/out']
+        output_nodes = [OUTPUT, 'pre_processing/out']
         frozen_graph = freeze_session(sess, output_names=output_nodes)
         frozen_graph = optimize_for_inference(
             sess, frozen_graph, ['is_training'],
@@ -52,20 +79,6 @@ def main():
 
         # tf.summary.FileWriter("model_out/", graph=frozen_graph)
         tf.io.write_graph(frozen_graph, "model_out/", "frozen_model.pb", as_text=False)
-
-    # with tf.Session() as sess:
-    #     graph_def = tf.GraphDef()
-    #     with gfile.FastGFile('model_out/frozen_model.pb', 'rb') as f:
-    #         graph_def.ParseFromString(f.read())
-    #     tf.import_graph_def(graph_def, name='')
-    #     input_tensor = tf.get_default_graph().get_tensor_by_name(
-    #         "input_images:0")
-    #     # is_training = tf.get_default_graph().get_tensor_by_name("is_training:0")
-    #     embedding_tensor = tf.get_default_graph().get_tensor_by_name(
-    #         "gdc/embedding/Identity:0")
-    #     tf.summary.FileWriter("output_models/", graph=tf.get_default_graph())
-    #     result = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img, axis=0)})
-    #     print(result)
 
 
 def replace_pre_processing(input_graph, replace_nodes=None):
@@ -119,7 +132,7 @@ def optimize_for_inference(sess, input_graph_def, is_train_nodes,
                                                  replace_nodes)
     optimized_graph_def = remove_unuse_node(sess, optimized_graph_def,
                                             output_node_names)
-    optimized_graph_def = fold_batch_norms(optimized_graph_def)
+    # optimized_graph_def = fold_batch_norms(optimized_graph_def)
 
     ensure_graph_is_valid(optimized_graph_def)
     return optimized_graph_def
@@ -159,7 +172,7 @@ def node_name_from_input(node_name):
 def modify_nodes(input_graph,
                  protected_nodes=None,
                  is_train_nodes=None,
-                 replace_nodes = None):
+                 replace_nodes=None):
     if not protected_nodes:
         protected_nodes = []
     if not is_train_nodes:
@@ -523,4 +536,5 @@ def scale_after_normalization(node):
 
 
 if __name__ == '__main__':
-    main()
+    # freeze()
+    test()
