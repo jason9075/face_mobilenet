@@ -7,7 +7,7 @@ class ResNet50(BaseNet):
         super().__init__(input_layer, is_train)  # input = n
         self.layer_list = [3, 4, 6, 3]
         with tf.variable_scope('resnet34'):
-            ch = 32  # paper is 64. (total parameters: 64 have 38516608, 32 have 9826240)
+            ch = 64  # paper is 64. (total parameters: 64 have 38516608, 32 have 9826240)
             net = tf.layers.conv2d(input_layer, ch, 7, strides=2, name='res1')  # (n/2,n/2,64)
             net = max_pool(net, filter_size=(3, 3), strides=(2, 2), name='res2_max_pool')  # (n/4,n/4,64)
 
