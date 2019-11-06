@@ -15,7 +15,7 @@ from sklearn import preprocessing
 from tensorflow.core.protobuf import config_pb2
 
 import utils
-from backend.loss_function import combine_loss_val
+from backend.loss_function import combine_loss_val, pure_softmax
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
@@ -116,15 +116,17 @@ def main():
             .final_layer_type(FinalLayer.G) \
             .build()
 
-        logit = combine_loss_val(
-            embedding=net.embedding,
-            gt_labels=labels,
-            num_labels=NUM_CLASSES,
-            batch_size=BATCH_SIZE,
-            m1=M1,
-            m2=M2,
-            m3=M3,
-            s=SCALE)
+        # logit = combine_loss_val(
+        #     embedding=net.embedding,
+        #     gt_labels=labels,
+        #     num_labels=NUM_CLASSES,
+        #     batch_size=BATCH_SIZE,
+        #     m1=M1,
+        #     m2=M2,
+        #     m3=M3,
+        #     s=SCALE)
+
+        logit = pure_softmax(net.embedding, NUM_CLASSES)
 
         inference_loss = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(

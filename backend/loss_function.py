@@ -46,6 +46,21 @@ def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3,
     return updated_logits
 
 
+def pure_softmax(embedding, num_labels):
+    with tf.variable_scope('pure_softmax'):
+        embedding_size = embedding.get_shape().as_list()[-1]
+        shape = (embedding_size, num_labels)
+
+        weights = tf.get_variable(
+            name='class_weight',
+            shape=shape,
+            initializer=WEIGHT_INIT,
+            dtype=D_TYPE)
+
+    return tf.matmul(
+        embedding, weights, name='embedding_dense')  # fully connect dense
+
+
 def triplet_loss(anchor, positive, negative, alpha):
     with tf.variable_scope('triplet_loss'):
         pos_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, positive)), 1)
