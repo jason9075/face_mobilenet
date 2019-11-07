@@ -67,7 +67,7 @@ def triplet_loss(anchor, positive, negative, alpha):
         neg_dist = tf.reduce_sum(tf.square(tf.subtract(anchor, negative)), 1)
 
         basic_loss = tf.add(tf.subtract(pos_dist, neg_dist), alpha)
-        loss = tf.reduce_mean(tf.maximum(basic_loss, 0.0), 0)
+        loss = tf.reduce_sum(tf.maximum(basic_loss, 0.0), 0)
 
     return loss
 

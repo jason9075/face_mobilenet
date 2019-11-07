@@ -25,12 +25,12 @@ SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 MODEL = Arch.RES_NET50
 
-PEOPLE_PER_BATCH = 90  # must be divisible by 3
+PEOPLE_PER_BATCH = 45  # must be divisible by 3
 IMAGES_PER_PERSON = 3
-BATCH_SIZE = 90  # must be divisible by 3
+BATCH_SIZE = 45  # must be divisible by 3
 EMBEDDING_SIZE = 128
 NUM_PREPROCESS_THREADS = 4
-ALPHA = 0.2  # Positive to negative triplet distance margin.
+ALPHA = 0.5  # Positive to negative triplet distance margin.
 
 SHOW_INFO_INTERVAL = 100
 SUMMARY_INTERVAL = 2000
@@ -257,8 +257,6 @@ def main():
                         triplet_paths = list(itertools.chain(*triplets))
                         labels_array = np.reshape(np.arange(len(triplet_paths)), (-1, 3))
                         triplet_paths_array = np.reshape(np.expand_dims(np.array(triplet_paths), 1), (-1, 3))
-                        print('train path', image_paths_array)
-                        print('train labels_array', labels_array)
                         sess.run(enqueue_op,
                                  {image_paths_placeholder: triplet_paths_array, labels_placeholder: labels_array})
                         nrof_examples = len(triplet_paths)
@@ -270,7 +268,7 @@ def main():
                             imgs, labs = sess.run([image_batch, labels_batch],
                                                   feed_dict={batch_size_placeholder: batch_size})
                             feed_dict = {input_layer: imgs, is_training: True}
-                            total_loss_val, inference_loss_val, wd_loss_val, _, step, emb = sess.run(
+                            total_loss_val, inf_loss_val, wd_loss_val, _, step, emb = sess.run(
                                 [total_loss, inference_loss, wd_loss, train_op, global_step, embeddings],
                                 feed_dict=feed_dict)
                             emb_array[labs, :] = emb
@@ -280,8 +278,9 @@ def main():
 
                             # print training information
                             if step % SHOW_INFO_INTERVAL == 0:
+                                label_name = [triplet_paths[l].split('/')[-2] for l in labs]
                                 show_info(epoch_idx, batch_idx, epoch_size, step,
-                                          total_loss_val, inference_loss_val, wd_loss_val, duration, emb)
+                                          total_loss_val, inf_loss_val, wd_loss_val, duration, emb, label_name)
                             # save summary
                             if step % SUMMARY_INTERVAL == 0:
                                 save_summary(step, imgs, input_layer, sess, summary, summary_op)
@@ -323,7 +322,7 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
 
 
 def save_ckpt(step, i, saver, sess):
-    log('epoch: %d,step: %d, saving ckpt.' % (i, step))
+    log('epoch: %d, step: %d, saving ckpt.' % (i, step))
     filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
@@ -338,14 +337,15 @@ def save_summary(step, images_train, input_layer, sess,
     summary.add_summary(summary_op_val, step)
 
 
-def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_loss_val, wd_loss_val, duration, emb):
+def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
+              duration, emb, label_name):
     pos_dist = np.sum(np.square(emb[0] - emb[1]))
     neg_dist = np.sum(np.square(emb[0] - emb[2]))
 
-    log('Epoch: [%d][%d/%d], total_step %d, total_loss is %.2f, inf_loss is %.2f, weight_loss '
-        '%.2f, Time %.3f, Sample: (A,P): %.2f, (A,N) %.2f' %
-        (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_loss_val, wd_loss_val,
-         duration, pos_dist, neg_dist))
+    log('Epoch: [%d][%d/%d], step %d, total_loss: %.2f, inf_loss: %.2f, weight_loss: '
+        '%.2f, Time %.3f, (A,P,N):(%s,%s,%s), (P,N):(%.3f,%.3f)' %
+        (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
+         duration, label_name[0], label_name[1], label_name[2], pos_dist, neg_dist))
 
 
 def sample_people(dataset, people_per_batch, images_per_person):
