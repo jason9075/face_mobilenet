@@ -283,13 +283,13 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
 
 
 def save_ckpt(step, i, saver, sess):
-    log('epoch: %d,count: %d, saving ckpt.' % (i, step))
+    log('epoch: %d,step: %d, saving ckpt.' % (i, step))
     filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
 
-def save_summary(count, images_train, input_layer, labels, labels_train, sess,
+def save_summary(step, images_train, input_layer, labels, labels_train, sess,
                  summary, summary_op, is_training):
     feed_summary_dict = {
         input_layer: images_train,
@@ -297,15 +297,15 @@ def save_summary(count, images_train, input_layer, labels, labels_train, sess,
         is_training: False
     }
     summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
-    summary.add_summary(summary_op_val, count)
+    summary.add_summary(summary_op_val, step)
 
 
-def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
+def show_info(acc_val, step, i, images_train, inference_loss_val, input_layer,
               labels_train, net, pre_sec, sess, total_loss_val, is_training,
               wd_loss_val):
     log('epoch %d, step: %d, total_loss: %.2f, inf_loss is %.2f, weight_loss is %.2f, '
         'train_acc: %.6f, time %.3f samples/sec' %
-        (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
+        (i, step, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
          pre_sec))
     feed_dict = {input_layer: images_train[:2], is_training: False}
     embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)

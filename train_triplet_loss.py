@@ -16,12 +16,14 @@ from backend.loss_function import triplet_loss
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
-INPUT_SIZE = (112, 112)
+INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 120000, 160000]
+LR_VAL = [0.01, 0.005, 0.001, 0.0005]
 ACC_LOW_BOUND = 0.85
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
+MODEL = Arch.RES_NET50
 
 PEOPLE_PER_BATCH = 90  # must be divisible by 3
 IMAGES_PER_PERSON = 3
@@ -31,7 +33,7 @@ NUM_PREPROCESS_THREADS = 4
 ALPHA = 0.2  # Positive to negative triplet distance margin.
 
 SHOW_INFO_INTERVAL = 100
-SUMMARY_INTERVAL = 300
+SUMMARY_INTERVAL = 2000
 CKPT_INTERVAL = 1000
 VALIDATE_INTERVAL = 2000
 
@@ -55,8 +57,8 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--data-dir', default='./images/ray_marathon/', help='training data path')
-    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
+    parser.add_argument('--data-dir', default='./images/star224/', help='training data path')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: MDL_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
 
@@ -146,8 +148,8 @@ def main():
         labels_batch = tf.identity(labels_batch, 'label_batch')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.MOBILE_NET_V2) \
-            .final_layer_type(FinalLayer.GDC) \
+            .arch_type(MODEL) \
+            .final_layer_type(FinalLayer.G) \
             .build()
 
         embeddings = tf.nn.l2_normalize(net.embedding, 1, 1e-10, name='embeddings')
@@ -162,7 +164,7 @@ def main():
         lr = tf.train.piecewise_constant(
             global_step,
             boundaries=LR_STEPS,
-            values=[0.001, 0.0005, 0.0003, 0.0001],
+            values=LR_VAL,
             name='lr_schedule')
 
         opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=MOMENTUM)
@@ -190,9 +192,9 @@ def main():
             for var in tf.trainable_variables():
                 summaries.append(tf.summary.histogram(var.op.name, var))
 
-            summaries.append(tf.summary.scalar('inference_loss', inference_loss))
-            summaries.append(tf.summary.scalar('wd_loss', wd_loss))
-            summaries.append(tf.summary.scalar('total_loss', total_loss))
+            summaries.append(tf.summary.scalar('loss/inference', inference_loss))
+            summaries.append(tf.summary.scalar('loss/weight_decay', wd_loss))
+            summaries.append(tf.summary.scalar('loss/total', total_loss))
             summaries.append(tf.summary.scalar('leraning_rate', lr))
             summary_op = tf.summary.merge(summaries)
             saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
@@ -255,6 +257,8 @@ def main():
                         triplet_paths = list(itertools.chain(*triplets))
                         labels_array = np.reshape(np.arange(len(triplet_paths)), (-1, 3))
                         triplet_paths_array = np.reshape(np.expand_dims(np.array(triplet_paths), 1), (-1, 3))
+                        print('train path', image_paths_array)
+                        print('train labels_array', labels_array)
                         sess.run(enqueue_op,
                                  {image_paths_placeholder: triplet_paths_array, labels_placeholder: labels_array})
                         nrof_examples = len(triplet_paths)
@@ -292,9 +296,8 @@ def main():
                                                          input_layer, net, saver, sess,
                                                          is_training, ver_dataset)
             except Exception as err:
-                log('Exception, saving ckpt. err: {}'.format(err))
-                filename = 'InsightFace_iter_err_{:d}'.format(
-                    step) + '.ckpt'
+                log('Exception, saving interrupt ckpt. err: {}'.format(err))
+                filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
                 filename = os.path.join(MODEL_OUT_PATH, filename)
                 saver.save(sess, filename)
                 raise err
@@ -312,7 +315,7 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
     log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         log('best accuracy is %.5f' % val_acc)
-        filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, step) + '.ckpt'
+        filename = '{:s}_best_{:.5f}_iter_{:d}.ckpt'.format(MODEL.name, val_acc, step)
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
         return val_acc
@@ -320,8 +323,8 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
 
 
 def save_ckpt(step, i, saver, sess):
-    log('epoch: %d,count: %d, saving ckpt.' % (i, step))
-    filename = 'InsightFace_iter_{:d}'.format(step) + '.ckpt'
+    log('epoch: %d,step: %d, saving ckpt.' % (i, step))
+    filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
@@ -339,8 +342,8 @@ def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_
     pos_dist = np.sum(np.square(emb[0] - emb[1]))
     neg_dist = np.sum(np.square(emb[0] - emb[2]))
 
-    log('Epoch: [%d][%d/%d], total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-        'loss is %.2f , Time %.3f , Sample: (A,P): %.2f, (A,N) %.2f' %
+    log('Epoch: [%d][%d/%d], total_step %d, total_loss is %.2f, inf_loss is %.2f, weight_loss '
+        '%.2f, Time %.3f, Sample: (A,P): %.2f, (A,N) %.2f' %
         (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_loss_val, wd_loss_val,
          duration, pos_dist, neg_dist))
 
@@ -387,6 +390,7 @@ def get_dataset(path):
         image_paths = get_image_paths(facedir)
         dataset.append(ImageClass(class_name, image_paths))
 
+    dataset = [data for data in dataset if IMAGES_PER_PERSON <= len(data)]
     return dataset
 
 

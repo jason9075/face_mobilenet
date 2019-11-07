@@ -15,7 +15,7 @@ import numpy as np
 
 import utils
 
-CKPT_NAME = 'InsightFace_iter_best_0.97_8000.ckpt'
+CKPT_NAME = 'RES_NET50_best0.95739_80000.ckpt'
 INPUT_ORDER = {
     "BatchNormWithGlobalNormalization":
         ["conv_op", "mean_op", "var_op", "beta_op", "gamma_op"],
@@ -26,35 +26,42 @@ EPSILON_ATTR = {
     "FusedBatchNorm": "epsilon"
 }
 
-OUTPUT = 'pre_processing/out'
-# OUTPUT = 'g_type/embedding/Identity'
+# OUTPUT = 'combine_loss/embedding_dense'
+# OUTPUT = 'embedding_dense'
+OUTPUT = 'g_type/embedding/BiasAdd'
 
 
 def test():
-    img_1 = cv2.imread('images/astra_door_align/jason/2019-07-18_17-29-34_jason_278_116_116_9c2e1d_4.jpg')
+    img_1 = cv2.imread('images/盧廣仲/盧廣仲_000002.jpg')
     img_1 = cv2.resize(img_1, (224, 224))
+    img_1 = cv2.cvtColor(img_1, cv2.COLOR_BGR2RGB)
     img_1 = np.array(img_1, dtype=np.float32)
 
-    img_2 = cv2.imread('images/astra_door_align/jason/2019-07-17_18-02-53_jason_319_143_143_9c2e1d_8.jpg')
+    img_2 = cv2.imread('images/豬哥亮/豬哥亮_000004.jpg')
     img_2 = cv2.resize(img_2, (224, 224))
+    img_2 = cv2.cvtColor(img_2, cv2.COLOR_BGR2RGB)
     img_2 = np.array(img_2, dtype=np.float32)
 
     with tf.Session() as sess:
         graph_def = tf.GraphDef()
-        with gfile.FastGFile('model_out/frozen_model.pb', 'rb') as f:
+        with gfile.FastGFile('model_out/frozen_model_star.pb', 'rb') as f:
             graph_def.ParseFromString(f.read())
         tf.import_graph_def(graph_def, name='')
         input_tensor = tf.get_default_graph().get_tensor_by_name(
             "input_images:0")
-        # is_training = tf.get_default_graph().get_tensor_by_name("is_training:0")
         embedding_tensor = tf.get_default_graph().get_tensor_by_name(
             f"{OUTPUT}:0")
-        tf.summary.FileWriter("output_models/", graph=tf.get_default_graph())
+        # tf.summary.FileWriter("output_models/", graph=tf.get_default_graph())
         result1 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_1, axis=0)})[0]
         result2 = sess.run(embedding_tensor, feed_dict={input_tensor: np.expand_dims(img_2, axis=0)})[0]
-        vector_pair = preprocessing.normalize(
-            [result1, result2])
-        dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
+        # print(result1[np.argmax(result1)])
+        # print(result2[np.argmax(result2)])
+        print(result1)
+        print(result2)
+        # vector_pair = preprocessing.normalize(
+        #     [result1, result2])
+        # dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
+        dist = np.linalg.norm(result1 - result2)
         print(dist)
 
 
@@ -77,8 +84,8 @@ def freeze():
             sess, frozen_graph, ['is_training'],
             {'input_images': 'pre_processing/out'}, output_nodes)
 
-        # tf.summary.FileWriter("model_out/", graph=frozen_graph)
-        tf.io.write_graph(frozen_graph, "model_out/", "frozen_model.pb", as_text=False)
+        tf.summary.FileWriter("model_out/", graph=frozen_graph)
+        tf.io.write_graph(frozen_graph, "model_out/", "frozen_model_star.pb", as_text=False)
 
 
 def replace_pre_processing(input_graph, replace_nodes=None):
