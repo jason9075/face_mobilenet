@@ -7,21 +7,21 @@ class MobileNetV2(BaseNet):
         super().__init__(input_layer, is_train)
         exp = 6  # expansion ratio
         with tf.variable_scope('mobilenet_v2'):
-            net = conv2d(  # (112,112,32)
+            net = conv2d(  # (n/2,n/2,24)
                 input_layer, (3, 3),
-                32, (1, 1),
+                32, (2, 2),
                 act=ACT_FUNC,
                 name='conv_1',
                 is_train=is_train)
 
-            net = inv_res_block(  # (112,112,16)
+            net = inv_res_block(
                 net,
                 1,
                 16, (1, 1),
                 name='res2_1',
                 is_train=is_train)
 
-            net = inv_res_block(  # (56,56,24)
+            net = inv_res_block(  # (n/4,n/4,24)
                 net,
                 exp,
                 24, (2, 2),
@@ -30,7 +30,7 @@ class MobileNetV2(BaseNet):
             net = inv_res_block(
                 net, exp, 24, (1, 1), name='res3_2', is_train=is_train)
 
-            net = inv_res_block(  # (28,28,32)
+            net = inv_res_block(  # (n/8,n/8,32)
                 net,
                 exp,
                 32, (2, 2),
@@ -41,7 +41,7 @@ class MobileNetV2(BaseNet):
             net = inv_res_block(
                 net, exp, 32, (1, 1), name='res4_3', is_train=is_train)
 
-            net = inv_res_block(  # (14,14,64)
+            net = inv_res_block(  # (n/16,n/16,64)
                 net,
                 exp,
                 64, (2, 2),
@@ -54,7 +54,7 @@ class MobileNetV2(BaseNet):
             net = inv_res_block(
                 net, exp, 64, (1, 1), name='res5_4', is_train=is_train)
 
-            net = inv_res_block(  # (14,14,96)
+            net = inv_res_block(
                 net,
                 exp,
                 96, (1, 1),
@@ -65,7 +65,7 @@ class MobileNetV2(BaseNet):
             net = inv_res_block(
                 net, exp, 96, (1, 1), name='res6_3', is_train=is_train)
 
-            net = inv_res_block(  # (7,7,160)
+            net = inv_res_block(  # (n/32,n/32,160)
                 net,
                 exp,
                 160, (2, 2),
@@ -76,7 +76,7 @@ class MobileNetV2(BaseNet):
             net = inv_res_block(
                 net, exp, 160, (1, 1), name='res7_3', is_train=is_train)
 
-            net = inv_res_block(  # (7,7,320)
+            net = inv_res_block(  # (n/32,n/32,320)
                 net,
                 exp,
                 320, (1, 1),
@@ -84,7 +84,7 @@ class MobileNetV2(BaseNet):
                 is_train=is_train,
                 shortcut=False)
 
-            net = conv2d(  # (7,7,1024)
+            net = conv2d(  # (n/32,n/32,1024)
                 net, (1, 1),
                 1024, (1, 1),
                 act=ACT_FUNC,

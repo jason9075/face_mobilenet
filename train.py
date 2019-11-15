@@ -3,22 +3,21 @@ import glob
 import logging
 import logging.handlers as handlers
 import os
-import pickle
 import time
 from datetime import datetime
 
 import cv2
-# import mxnet as mx
 import numpy as np
 import tensorflow as tf
 from sklearn import preprocessing
 from tensorflow.core.protobuf import config_pb2
 
 import utils
-from backend.loss_function import combine_loss_val
+from backend.loss_function import combine_loss_val, pure_softmax
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
+MODEL = Arch.RES_NET50
 INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 160000, 240000]
 LR_VAL = [0.01, 0.005, 0.001, 0.0005]
@@ -30,12 +29,12 @@ EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 M1 = 1.0
-M2 = 0.2
-M3 = 0.3
+M2 = 0.0
+M3 = 0.0
 SCALE = 64
 
 SHOW_INFO_INTERVAL = 100
-SUMMARY_INTERVAL = 300
+SUMMARY_INTERVAL = 2000
 CKPT_INTERVAL = 1000
 VALIDATE_INTERVAL = 2000
 MONITOR_NODE = ''
@@ -48,7 +47,7 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: MDL_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
 
@@ -71,7 +70,7 @@ def init_log():
 
 def log(msg, verbose=True):
     if verbose:
-        print(msg)
+        print(datetime.now().strftime("%H:%M:%S:"), msg)
     logger.info(msg)
 
 
@@ -110,21 +109,22 @@ def main():
                 None,
             ], dtype=tf.int64)
         is_training = tf.placeholder_with_default(False, (), name='is_training')
-
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.RES_NET50) \
+            .arch_type(MODEL) \
             .final_layer_type(FinalLayer.G) \
             .build()
 
-        logit = combine_loss_val(
-            embedding=net.embedding,
-            gt_labels=labels,
-            num_labels=NUM_CLASSES,
-            batch_size=BATCH_SIZE,
-            m1=M1,
-            m2=M2,
-            m3=M3,
-            s=SCALE)
+        # logit = combine_loss_val(
+        #     embedding=net.embedding,
+        #     gt_labels=labels,
+        #     num_labels=NUM_CLASSES,
+        #     batch_size=BATCH_SIZE,
+        #     m1=M1,
+        #     m2=M2,
+        #     m3=M3,
+        #     s=SCALE)
+
+        logit = pure_softmax(net.embedding, NUM_CLASSES)
 
         inference_loss = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -140,7 +140,8 @@ def main():
             values=LR_VAL,
             name='lr_schedule')
 
-        opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
+        # opt = tf.train.AdamOptimizer(learning_rate=lr, beta1=0.9, beta2=0.995)
+        opt = tf.train.GradientDescentOptimizer(learning_rate=lr)
         grads = opt.compute_gradients(total_loss)
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -188,7 +189,7 @@ def main():
             restore_saver.restore(sess,
                                   os.path.join(MODEL_OUT_PATH, args.pretrain))
 
-        count = 0
+        step = 0
         have_best = False
         best_accuracy = 0
         for i in range(EPOCH):
@@ -219,45 +220,48 @@ def main():
                         log('{} max value: {}'.format(MONITOR_NODE, np.max(node_v)), verbose=False)
                     end = time.time()
                     pre_sec = BATCH_SIZE / (end - start)
-                    if count == 0:
-                        count += 1
+                    if step == 0:
+                        step += 1
                         continue
                     # print training information
-                    if count % SHOW_INFO_INTERVAL == 0:
-                        show_info(acc_val, count, i, images_train,
+                    if step % SHOW_INFO_INTERVAL == 0:
+                        show_info(acc_val, step, i, images_train,
                                   inference_loss_val, input_layer,
                                   labels_train, net, pre_sec, sess,
                                   total_loss_val, is_training, wd_loss_val)
                     # save summary
-                    if count % SUMMARY_INTERVAL == 0:
-                        save_summary(count, images_train, input_layer, labels,
+                    if step % SUMMARY_INTERVAL == 0:
+                        save_summary(step, images_train, input_layer, labels,
                                      labels_train, sess, summary, summary_op,
                                      is_training)
 
                     # save ckpt files
-                    if count % CKPT_INTERVAL == 0 and not have_best:
-                        save_ckpt(count, i, saver, sess)
+                    if step % CKPT_INTERVAL == 0 and not have_best:
+                        save_ckpt(step, i, saver, sess)
 
                     # validate
-                    if count % VALIDATE_INTERVAL == 0:
-                        best_accuracy, have_best = validate(best_accuracy, count,
-                                                            input_layer, net, saver, sess,
-                                                            is_training, ver_dataset)
+                    if step % VALIDATE_INTERVAL == 0:
+                        val_accuracy, is_best = validate(best_accuracy, step,
+                                                         input_layer, net, saver, sess,
+                                                         is_training, ver_dataset)
+                        if is_best:
+                            best_accuracy = val_accuracy
+                        if not have_best and is_best:
+                            have_best = is_best
 
-                    count += 1
+                    step += 1
                 except tf.errors.OutOfRangeError:
                     log("End of epoch %d" % i)
                     break
                 except Exception as err:
                     log('Exception, saving ckpt. err: {}'.format(err))
-                    filename = 'InsightFace_iter_err_{:d}'.format(
-                        count) + '.ckpt'
+                    filename = '{:s}_iter_err_{:d}.ckpt'.format(MODEL.name, step)
                     filename = os.path.join(MODEL_OUT_PATH, filename)
                     saver.save(sess, filename)
                     raise err
 
 
-def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
+def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
              ver_dataset):
     feed_dict_test = {is_training: False}
     val_acc, val_thr = utils.ver_test(
@@ -266,24 +270,24 @@ def validate(best_accuracy, count, input_layer, net, saver, sess, is_training,
         embedding_tensor=net.embedding,
         feed_dict=feed_dict_test,
         input_placeholder=input_layer)
-    log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
+    log('test accuracy is: {}, thr: {}, last best accuracy: {}.'.format(val_acc, val_thr, best_accuracy))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
-        log('best accuracy is %.5f' % val_acc)
-        filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, count) + '.ckpt'
+        log('new best accuracy accuracy is: {}.'.format(val_acc))
+        filename = '{:s}_best{:.5f}_{:d}.ckpt'.format(MODEL.name, val_acc, step)
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
         return val_acc, True
-    return best_accuracy, False
+    return val_acc, False
 
 
-def save_ckpt(count, i, saver, sess):
-    log('epoch: %d,count: %d, saving ckpt.' % (i, count))
-    filename = 'InsightFace_iter_{:d}'.format(count) + '.ckpt'
+def save_ckpt(step, i, saver, sess):
+    log('epoch: %d,step: %d, saving ckpt.' % (i, step))
+    filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
 
-def save_summary(count, images_train, input_layer, labels, labels_train, sess,
+def save_summary(step, images_train, input_layer, labels, labels_train, sess,
                  summary, summary_op, is_training):
     feed_summary_dict = {
         input_layer: images_train,
@@ -291,15 +295,15 @@ def save_summary(count, images_train, input_layer, labels, labels_train, sess,
         is_training: False
     }
     summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
-    summary.add_summary(summary_op_val, count)
+    summary.add_summary(summary_op_val, step)
 
 
-def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
+def show_info(acc_val, step, i, images_train, inference_loss_val, input_layer,
               labels_train, net, pre_sec, sess, total_loss_val, is_training,
               wd_loss_val):
-    log('epoch %d, total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-        'loss is %.2f, training accuracy is %.6f, time %.3f samples/sec' %
-        (i, count, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
+    log('epoch %d, step: %d, total_loss: %.2f, inf_loss is %.2f, weight_loss is %.2f, '
+        'train_acc: %.6f, time %.3f samples/sec' %
+        (i, step, total_loss_val, inference_loss_val, wd_loss_val, acc_val,
          pre_sec))
     feed_dict = {input_layer: images_train[:2], is_training: False}
     embedding_pair = sess.run(net.embedding, feed_dict=feed_dict)
@@ -309,37 +313,14 @@ def show_info(acc_val, count, i, images_train, inference_loss_val, input_layer,
     log('(%d vs %d)distance: %.2f' % (labels_train[0], labels_train[1], dist))
 
 
-def load_bin(bin_path):
-    bins, issame_list = pickle.load(open(bin_path, 'rb'), encoding='bytes')
-    data_list = []
-    for _ in [0, 1]:
-        data = np.empty((len(issame_list) * 2, INPUT_SIZE[0], INPUT_SIZE[1], 3))
-        data_list.append(data)
-    for i in range(len(issame_list) * 2):
-        _bin = bins[i]
-        img = mx.image.imdecode(_bin).asnumpy()
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        for flip in [0, 1]:
-            if flip == 1:
-                img = np.fliplr(img)
-            data_list[flip][i, ...] = img
-        i += 1
-        if i % 1000 == 0:
-            print('loading bin', i)
-    print(data_list[0].shape)
-    return data_list, issame_list
-
-
 def test():
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path)
 
-    # lfw_set = load_bin('tfrecord/lfw.bin')
-
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
-            'model_out/InsightFace_iter_198000.ckpt.meta', clear_devices=True)
-        saver.restore(sess, "model_out/InsightFace_iter_198000.ckpt")
+            'model_out/xxx.ckpt.meta', clear_devices=True)
+        saver.restore(sess, "model_out/xxx.ckpt")
 
         # image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
         # image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
@@ -362,15 +343,6 @@ def test():
             input_placeholder=input_tensor)
 
         print('astra acc: %.2f, thr: %.2f' % (val_acc, val_thr))
-
-        # val_acc, val_thr = utils.lfw_test(
-        #     data_set=lfw_set,
-        #     sess=sess,
-        #     embedding_tensor=embedding_tensor,
-        #     feed_dict=feed_dict_test,
-        #     input_placeholder=input_tensor)
-        #
-        # print('lfw acc: %.2f, thr: %.2f' % (val_acc, val_thr))
 
         # feed_dict = {input_tensor: np.expand_dims(image1, 0), trainable: False}
         # vector1 = sess.run(embedding_tensor, feed_dict=feed_dict)

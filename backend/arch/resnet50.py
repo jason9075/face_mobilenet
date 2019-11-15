@@ -7,32 +7,34 @@ class ResNet50(BaseNet):
         super().__init__(input_layer, is_train)  # input = n
         self.layer_list = [3, 4, 6, 3]
         with tf.variable_scope('resnet50'):
-            ch = 32  # paper is 64
-            net = tf.layers.conv2d(input_layer, ch, 3, strides=1, name='conv')  # (n,n,32)
+            ch = 64  # paper is 64. (total parameters: 64 have 38516608, 32 have 9826240)
+            net = tf.layers.conv2d(input_layer, ch, 7, strides=2, name='res1')  # (n/2,n/2,64)
+            net = max_pool(net, filter_size=(3, 3), strides=(2, 2), name='res2_max_pool')  # (n/4,n/4,64)
 
             for i in range(self.layer_list[0]):
-                net = resblock(net, channels=ch, is_train=is_train, down_sample=False, scope='resblock0_' + str(i))
+                net = bottle_resblock(net, ch=ch, is_train=is_train, down_sample=False,
+                                      scope='res2_' + str(i))
 
-            net = resblock(net, channels=ch * 2, is_train=is_train, down_sample=True,
-                           scope='resblock1_0')  # (n/2,n/2,64)
+            net = bottle_resblock(net, ch=ch * 2, is_train=is_train, down_sample=True,
+                                  scope='res3_0')  # (n/8,n/8,128)
 
             for i in range(1, self.layer_list[1]):
-                net = resblock(net, channels=ch * 2, is_train=is_train, down_sample=False, scope='resblock1_' + str(i))
+                net = bottle_resblock(net, ch=ch * 2, is_train=is_train, down_sample=False,
+                                      scope='res3_' + str(i))
 
-            net = resblock(net, channels=ch * 4, is_train=is_train, down_sample=True,
-                           scope='resblock2_0')  # (n/4,n/4,128)
+            net = bottle_resblock(net, ch=ch * 4, is_train=is_train, down_sample=True,
+                                  scope='res4_0')  # (n/16,n/16,256)
 
             for i in range(1, self.layer_list[2]):
-                net = resblock(net, channels=ch * 4, is_train=is_train, down_sample=False, scope='resblock2_' + str(i))
+                net = bottle_resblock(net, ch=ch * 4, is_train=is_train, down_sample=False,
+                                      scope='res4_' + str(i))
 
-            net = resblock(net, channels=ch * 8, is_train=is_train, down_sample=True,
-                           scope='resblock_3_0')  # (n/8,n/8,256)
+            net = bottle_resblock(net, ch=ch * 8, is_train=is_train, down_sample=True,
+                                  scope='res5_0')  # (n/32,n/32,512)
 
             for i in range(1, self.layer_list[3]):
-                net = resblock(net, channels=ch * 8, is_train=is_train, down_sample=False, scope='resblock_3_' + str(i))
-
-            net = tf.layers.batch_normalization(net, training=is_train, name='batch_norm')
-            net = tf.nn.relu(net)
+                net = bottle_resblock(net, ch=ch * 8, is_train=is_train, down_sample=False,
+                                      scope='res5_' + str(i))
 
             net = tf.reduce_mean(net, axis=[1, 2], keepdims=True, name='global_average')
 

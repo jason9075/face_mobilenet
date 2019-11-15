@@ -16,22 +16,24 @@ from backend.loss_function import triplet_loss
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
-INPUT_SIZE = (112, 112)
+INPUT_SIZE = (224, 224)
 LR_STEPS = [80000, 120000, 160000]
+LR_VAL = [0.01, 0.005, 0.001, 0.0005]
 ACC_LOW_BOUND = 0.85
 EPOCH = 10000
 SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
+MODEL = Arch.RES_NET50
 
-PEOPLE_PER_BATCH = 90  # must be divisible by 3
-IMAGES_PER_PERSON = 3
-BATCH_SIZE = 90  # must be divisible by 3
+PEOPLE_PER_BATCH = 45  # must be divisible by 3
+IMAGES_PER_PERSON = 10
+BATCH_SIZE = 45  # must be divisible by 3
 EMBEDDING_SIZE = 128
 NUM_PREPROCESS_THREADS = 4
-ALPHA = 0.2  # Positive to negative triplet distance margin.
+ALPHA = 0.5  # Positive to negative triplet distance margin.
 
 SHOW_INFO_INTERVAL = 100
-SUMMARY_INTERVAL = 300
+SUMMARY_INTERVAL = 2000
 CKPT_INTERVAL = 1000
 VALIDATE_INTERVAL = 2000
 
@@ -55,8 +57,8 @@ def purge():
 
 def get_parser():
     parser = argparse.ArgumentParser(description='parameters to train net')
-    parser.add_argument('--data-dir', default='./images/ray_marathon/', help='training data path')
-    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: InsightFace_iter_1110000.ckpt')
+    parser.add_argument('--data-dir', default='./images/star224/', help='training data path')
+    parser.add_argument('--pretrain', default='', help='pretrain model ckpt, ex: MDL_iter_1110000.ckpt')
     args = parser.parse_args()
     return args
 
@@ -146,8 +148,8 @@ def main():
         labels_batch = tf.identity(labels_batch, 'label_batch')
 
         net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(Arch.MOBILE_NET_V2) \
-            .final_layer_type(FinalLayer.GDC) \
+            .arch_type(MODEL) \
+            .final_layer_type(FinalLayer.G) \
             .build()
 
         embeddings = tf.nn.l2_normalize(net.embedding, 1, 1e-10, name='embeddings')
@@ -162,7 +164,7 @@ def main():
         lr = tf.train.piecewise_constant(
             global_step,
             boundaries=LR_STEPS,
-            values=[0.001, 0.0005, 0.0003, 0.0001],
+            values=LR_VAL,
             name='lr_schedule')
 
         opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=MOMENTUM)
@@ -190,9 +192,9 @@ def main():
             for var in tf.trainable_variables():
                 summaries.append(tf.summary.histogram(var.op.name, var))
 
-            summaries.append(tf.summary.scalar('inference_loss', inference_loss))
-            summaries.append(tf.summary.scalar('wd_loss', wd_loss))
-            summaries.append(tf.summary.scalar('total_loss', total_loss))
+            summaries.append(tf.summary.scalar('loss/inference', inference_loss))
+            summaries.append(tf.summary.scalar('loss/weight_decay', wd_loss))
+            summaries.append(tf.summary.scalar('loss/total', total_loss))
             summaries.append(tf.summary.scalar('leraning_rate', lr))
             summary_op = tf.summary.merge(summaries)
             saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
@@ -266,7 +268,7 @@ def main():
                             imgs, labs = sess.run([image_batch, labels_batch],
                                                   feed_dict={batch_size_placeholder: batch_size})
                             feed_dict = {input_layer: imgs, is_training: True}
-                            total_loss_val, inference_loss_val, wd_loss_val, _, step, emb = sess.run(
+                            total_loss_val, inf_loss_val, wd_loss_val, _, step, emb = sess.run(
                                 [total_loss, inference_loss, wd_loss, train_op, global_step, embeddings],
                                 feed_dict=feed_dict)
                             emb_array[labs, :] = emb
@@ -276,8 +278,9 @@ def main():
 
                             # print training information
                             if step % SHOW_INFO_INTERVAL == 0:
+                                label_name = [triplet_paths[l].split('/')[-2] for l in labs]
                                 show_info(epoch_idx, batch_idx, epoch_size, step,
-                                          total_loss_val, inference_loss_val, wd_loss_val, duration, emb)
+                                          total_loss_val, inf_loss_val, wd_loss_val, duration, emb, label_name)
                             # save summary
                             if step % SUMMARY_INTERVAL == 0:
                                 save_summary(step, imgs, input_layer, sess, summary, summary_op)
@@ -292,9 +295,8 @@ def main():
                                                          input_layer, net, saver, sess,
                                                          is_training, ver_dataset)
             except Exception as err:
-                log('Exception, saving ckpt. err: {}'.format(err))
-                filename = 'InsightFace_iter_err_{:d}'.format(
-                    step) + '.ckpt'
+                log('Exception, saving interrupt ckpt. err: {}'.format(err))
+                filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
                 filename = os.path.join(MODEL_OUT_PATH, filename)
                 saver.save(sess, filename)
                 raise err
@@ -312,7 +314,7 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
     log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         log('best accuracy is %.5f' % val_acc)
-        filename = 'InsightFace_iter_best_{:.2f}_{:d}'.format(val_acc, step) + '.ckpt'
+        filename = '{:s}_best_{:.5f}_iter_{:d}.ckpt'.format(MODEL.name, val_acc, step)
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
         return val_acc
@@ -320,8 +322,8 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
 
 
 def save_ckpt(step, i, saver, sess):
-    log('epoch: %d,count: %d, saving ckpt.' % (i, step))
-    filename = 'InsightFace_iter_{:d}'.format(step) + '.ckpt'
+    log('epoch: %d, step: %d, saving ckpt.' % (i, step))
+    filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
 
@@ -335,14 +337,15 @@ def save_summary(step, images_train, input_layer, sess,
     summary.add_summary(summary_op_val, step)
 
 
-def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_loss_val, wd_loss_val, duration, emb):
+def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
+              duration, emb, label_name):
     pos_dist = np.sum(np.square(emb[0] - emb[1]))
     neg_dist = np.sum(np.square(emb[0] - emb[2]))
 
-    log('Epoch: [%d][%d/%d], total_step %d, total loss is %.2f , inference loss is %.2f, weight deacy '
-        'loss is %.2f , Time %.3f , Sample: (A,P): %.2f, (A,N) %.2f' %
-        (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inference_loss_val, wd_loss_val,
-         duration, pos_dist, neg_dist))
+    log('Epoch: [%d][%d/%d], step %d, total_loss: %.2f, inf_loss: %.2f, weight_loss: '
+        '%.2f, Time %.3f, (A,P,N):(%s,%s,%s), (P,N):(%.3f,%.3f)' %
+        (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
+         duration, label_name[0], label_name[1], label_name[2], pos_dist, neg_dist))
 
 
 def sample_people(dataset, people_per_batch, images_per_person):
@@ -387,6 +390,7 @@ def get_dataset(path):
         image_paths = get_image_paths(facedir)
         dataset.append(ImageClass(class_name, image_paths))
 
+    dataset = [data for data in dataset if IMAGES_PER_PERSON <= len(data)]
     return dataset
 
 
@@ -413,7 +417,9 @@ def select_triplets(embeddings, nrof_images_per_class, image_paths, people_per_b
                 p_idx = emb_start_idx + pair
                 pos_dist_sqr = np.sum(np.square(embeddings[a_idx] - embeddings[p_idx]))
                 neg_dists_sqr[emb_start_idx:emb_start_idx + nrof_images] = np.NaN
-                all_neg = np.where(neg_dists_sqr - pos_dist_sqr < alpha)[0]  # VGG Face selection
+                all_neg = np.where(np.logical_and(neg_dists_sqr - pos_dist_sqr < alpha, pos_dist_sqr < neg_dists_sqr))[
+                    0]  # FaceNet selection
+                # all_neg = np.where(neg_dists_sqr - pos_dist_sqr < alpha)[0]  # VGG Face selection
                 nrof_random_negs = all_neg.shape[0]
                 if 0 < nrof_random_negs:
                     rnd_idx = np.random.randint(nrof_random_negs)
