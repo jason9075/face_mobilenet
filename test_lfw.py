@@ -12,7 +12,7 @@ LFW_PATH = 'tfrecord/lfw.bin'
 CKPT_NAME = 'RES_NET50_iter_462000.ckpt'
 INPUT_NODE = 'input_images:0'
 TRAINING_NODE = 'is_training:0'
-OUTPUT_NODE = 'g_type/embedding/BiasAdd:0'
+OUTPUT_NODE = 'g_type/embedding/Identity:0'
 
 
 def load_bin(bin_path):
