@@ -122,22 +122,7 @@ def main():
         enqueue_op = input_queue.enqueue_many([image_paths_placeholder, labels_placeholder])
 
         images_and_labels = []
-        for _ in range(NUM_PREPROCESS_THREADS):
-            filenames, label = input_queue.dequeue()
-            images = []
-            for filename in tf.unstack(filenames):
-                file_contents = tf.read_file(filename)
-                image = tf.image.decode_image(file_contents, channels=3)
-
-                image = tf.image.random_brightness(image, 0.2)
-                image = tf.image.random_saturation(image, 0.6, 1.6)
-                image = tf.image.random_contrast(image, 0.6, 1.4)
-                image = tf.image.random_flip_left_right(image)
-
-                # pylint: disable=no-member
-                image.set_shape((INPUT_SIZE[0], INPUT_SIZE[1], 3))
-                images.append(utils.tf_pre_process_image(image))
-            images_and_labels.append([images, label])
+        triplet_image_process(images_and_labels, input_queue)
 
         image_batch, labels_batch = tf.train.batch_join(
             images_and_labels, batch_size=batch_size_placeholder,
@@ -152,8 +137,8 @@ def main():
             .final_layer_type(FinalLayer.G) \
             .build()
 
-        embeddings = tf.nn.l2_normalize(net.embedding, 1, 1e-10, name='embeddings')
-        anchor, positive, negative = tf.unstack(tf.reshape(embeddings, [-1, 3, EMBEDDING_SIZE]), 3, 1)
+        l2_embeddings = tf.nn.l2_normalize(net.embedding, 1, 1e-10, name='l2_embeddings')
+        anchor, positive, negative = tf.unstack(tf.reshape(l2_embeddings, [-1, 3, EMBEDDING_SIZE]), 3, 1)
 
         inference_loss = triplet_loss(anchor, positive, negative, ALPHA)
         wd_loss = tf.reduce_sum(
@@ -269,7 +254,7 @@ def main():
                                                   feed_dict={batch_size_placeholder: batch_size})
                             feed_dict = {input_layer: imgs, is_training: True}
                             total_loss_val, inf_loss_val, wd_loss_val, _, step, emb = sess.run(
-                                [total_loss, inference_loss, wd_loss, train_op, global_step, embeddings],
+                                [total_loss, inference_loss, wd_loss, train_op, global_step, l2_embeddings],
                                 feed_dict=feed_dict)
                             emb_array[labs, :] = emb
                             duration = time.time() - start_time
@@ -300,6 +285,26 @@ def main():
                 filename = os.path.join(MODEL_OUT_PATH, filename)
                 saver.save(sess, filename)
                 raise err
+
+
+def triplet_image_process(images_and_labels, input_queue):
+    with tf.variable_scope('triplet_image_process'):
+        for _ in range(NUM_PREPROCESS_THREADS):
+            filenames, label = input_queue.dequeue()
+            images = []
+            for filename in tf.unstack(filenames):
+                file_contents = tf.read_file(filename)
+                image = tf.image.decode_image(file_contents, channels=3)
+
+                image = tf.image.random_brightness(image, 0.2)
+                image = tf.image.random_saturation(image, 0.6, 1.6)
+                image = tf.image.random_contrast(image, 0.6, 1.4)
+                image = tf.image.random_flip_left_right(image)
+
+                # pylint: disable=no-member
+                image.set_shape((INPUT_SIZE[0], INPUT_SIZE[1], 3))
+                images.append(utils.tf_pre_process_image(image))
+            images_and_labels.append([images, label])
 
 
 def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
