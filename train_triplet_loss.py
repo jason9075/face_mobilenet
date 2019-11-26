@@ -225,7 +225,7 @@ def main():
                             imgs, labs = sess.run([image_batch, labels_batch],
                                                   feed_dict={batch_size_placeholder: batch_size})
 
-                            emb = sess.run([net.embedding], feed_dict={input_layer: imgs, is_training: True})
+                            emb = sess.run([l2_embeddings], feed_dict={input_layer: imgs, is_training: True})
                             emb_array[labs, :] = emb
 
                         # print('%.3f' % (time.time() - start_time))
