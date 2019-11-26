@@ -16,7 +16,7 @@ from backend.loss_function import triplet_loss
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
-INPUT_SIZE = (224, 224)
+INPUT_SIZE = (112, 112)
 LR_STEPS = [80000, 120000, 160000]
 LR_VAL = [0.01, 0.005, 0.001, 0.0005]
 ACC_LOW_BOUND = 0.85
@@ -25,9 +25,9 @@ SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 MODEL = Arch.RES_NET50
 
-PEOPLE_PER_BATCH = 45  # must be divisible by 3
-IMAGES_PER_PERSON = 10
-BATCH_SIZE = 45  # must be divisible by 3
+PEOPLE_PER_BATCH = 90  # must be divisible by 3
+IMAGES_PER_PERSON = 4
+BATCH_SIZE = 90  # must be divisible by 3
 EMBEDDING_SIZE = 128
 NUM_PREPROCESS_THREADS = 4
 ALPHA = 0.5  # Positive to negative triplet distance margin.
@@ -99,7 +99,7 @@ def main():
     epoch_size = total_images_cnt // BATCH_SIZE
 
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    ver_dataset = utils.get_ver_data(verification_path)
+    ver_dataset = utils.get_ver_data(verification_path, INPUT_SIZE)
 
     with tf.Graph().as_default():
 
@@ -303,7 +303,7 @@ def triplet_image_process(images_and_labels, input_queue):
 
                 # pylint: disable=no-member
                 image.set_shape((INPUT_SIZE[0], INPUT_SIZE[1], 3))
-                images.append(utils.tf_pre_process_image(image))
+                images.append(utils.tf_pre_process_image(image, INPUT_SIZE))
             images_and_labels.append([images, label])
 
 

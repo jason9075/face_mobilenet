@@ -21,8 +21,8 @@ def parse_function(example_proto):
     return img, label
 
 
-def tf_pre_process_image(img):
-    img = tf.reshape(img, shape=(224, 224, 3))
+def tf_pre_process_image(img, shape):
+    img = tf.reshape(img, shape=(shape[0], shape[1], 3))
     # r, g, b = tf.split(img, num_or_size_splits=3, axis=-1)
     # img = tf.concat([b, g, r], axis=-1)
     img = tf.cast(img, dtype=tf.float32)
@@ -31,15 +31,15 @@ def tf_pre_process_image(img):
     return img
 
 
-def pre_process_image(img):
-    img = cv2.resize(img, (224, 224))
+def pre_process_image(img, shape):
+    img = cv2.resize(img, shape)
     img = np.array(img, dtype=np.float32)
     img -= 127.5
     img *= 0.0078125
     return img
 
 
-def get_ver_data(record_path, preprocessing=True):
+def get_ver_data(record_path, shape, preprocessing=True):
     record_iterator = tf.python_io.tf_record_iterator(path=record_path)
     first_list = []
     second_list = []
@@ -51,14 +51,14 @@ def get_ver_data(record_path, preprocessing=True):
         img = np.fromstring(image_string, dtype=np.uint8)
         img_first = cv2.imdecode(img, cv2.IMREAD_COLOR)
         if preprocessing:
-            img_first = pre_process_image(img_first)
+            img_first = pre_process_image(img_first, shape)
         first_list.append(img_first)
 
         image_string = example.features.feature['image_second'].bytes_list.value[0]
         img = np.fromstring(image_string, dtype=np.uint8)
         img_second = cv2.imdecode(img, cv2.IMREAD_COLOR)
         if preprocessing:
-            img_second = pre_process_image(img_second)
+            img_second = pre_process_image(img_second, shape)
         second_list.append(img_second)
 
         is_same = example.features.feature['is_same'].int64_list.value[0]

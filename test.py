@@ -6,11 +6,12 @@ import tensorflow as tf
 import face_recognition as fr
 
 CKPT_NAME = 'InsightFace_iter_85000.ckpt'
+SHAPE = (224, 224)
 
 
 def eval_by_ckpt(verification_name):
     verification_path = os.path.join('tfrecord', verification_name)
-    ver_dataset = utils.get_ver_data(verification_path)
+    ver_dataset = utils.get_ver_data(verification_path, SHAPE)
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
@@ -34,7 +35,7 @@ def eval_by_ckpt(verification_name):
 
 def eval_by_dlib(verification_name):
     verification_path = os.path.join('tfrecord', verification_name)
-    ver_dataset = utils.get_ver_data(verification_path, preprocessing=False)
+    ver_dataset = utils.get_ver_data(verification_path, SHAPE, preprocessing=False)
 
     val_acc, val_thr = ver_dlib(data_set=ver_dataset)
     print('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))

@@ -91,7 +91,7 @@ def main():
     next_element = iterator.get_next()
 
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    ver_dataset = utils.get_ver_data(verification_path)
+    ver_dataset = utils.get_ver_data(verification_path, INPUT_SIZE)
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -315,7 +315,7 @@ def show_info(acc_val, step, i, images_train, inference_loss_val, input_layer,
 
 def test():
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
-    ver_dataset = utils.get_ver_data(verification_path)
+    ver_dataset = utils.get_ver_data(verification_path, INPUT_SIZE)
 
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
@@ -325,8 +325,8 @@ def test():
         # image1 = cv2.imread('images/image_db/andy/gen_3791a1_21.jpg')
         # image2 = cv2.imread('images/image_db/andy/gen_3791a1_13.jpg')
         #
-        # image1 = processing(image1)
-        # image2 = processing(image2)
+        # image1 = processing(image1, INPUT_SIZE)
+        # image2 = processing(image2, INPUT_SIZE)
 
         input_tensor = tf.get_default_graph().get_tensor_by_name(
             "input_images:0")
@@ -359,8 +359,8 @@ def test():
         # print('dist: ',np.linalg.norm(vector1 - vector2))
 
 
-def processing(img):
-    img = cv2.resize(img, (224, 224))
+def processing(img, shape):
+    img = cv2.resize(img, shape)
     # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = np.array(img) - 127.5
     img *= 0.0078125
