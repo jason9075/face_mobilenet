@@ -7,9 +7,9 @@ import tensorflow as tf
 
 import utils
 
-INPUT_SIZE = (224, 224)
+INPUT_SIZE = (112, 112)
 LFW_PATH = 'tfrecord/lfw.bin'
-CKPT_NAME = 'RES_NET50_iter_462000.ckpt'
+CKPT_NAME = 'RES_NET50_iter_898000.ckpt'
 INPUT_NODE = 'input_images:0'
 TRAINING_NODE = 'is_training:0'
 OUTPUT_NODE = 'g_type/embedding/Identity:0'
@@ -38,12 +38,10 @@ def load_bin(bin_path):
 
 
 def main():
-    lfw_set = load_bin(LFW_PATH)
-
     with tf.Session() as sess:
         saver = tf.train.import_meta_graph(
             f'model_out/{CKPT_NAME}.meta', clear_devices=True)
-        saver.restore(sess, CKPT_NAME)
+        saver.restore(sess, f'model_out/{CKPT_NAME}')
 
         input_tensor = tf.get_default_graph().get_tensor_by_name(
             INPUT_NODE)
@@ -53,6 +51,7 @@ def main():
 
         feed_dict_test = {trainable: False}
 
+        lfw_set = load_bin(LFW_PATH)
         val_acc, val_thr = utils.lfw_test(
             data_set=lfw_set,
             sess=sess,

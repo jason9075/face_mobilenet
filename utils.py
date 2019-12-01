@@ -147,7 +147,7 @@ def lfw_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
         tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(issame_list)))
         acc = float(tp + tn) / len(issame_list)
         accs.append(acc)
-        print(f'finish: {threshold}, acc:{acc}')
+        print('threshold: %.2f, acc: %.2f' % (threshold, acc))
     best_threshold_index = int(np.argmax(accs))
 
     return accs[best_threshold_index], thresholds[best_threshold_index]
