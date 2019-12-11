@@ -48,8 +48,8 @@ class NetBuilder:
 
         return self
 
-    def build(self):
-        net = self.arch(self.input_node, self.is_train_node)
-        net = self.final_layer(net)
-        # net = tf.nn.relu6(net)
+    def build(self, reuse=False):
+        with tf.variable_scope('net', reuse=reuse):
+            net = self.arch(self.input_node, self.is_train_node)
+            net = self.final_layer(net)
         return net

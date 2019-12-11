@@ -1,15 +1,14 @@
 import argparse
 import glob
-import itertools
 import logging
 import logging.handlers as handlers
 import os
+import random
 import time
 from datetime import datetime
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops import data_flow_ops
 
 import utils
 from backend.loss_function import triplet_loss
@@ -25,11 +24,11 @@ SAVER_MAX_KEEP = 5
 MOMENTUM = 0.9
 MODEL = Arch.RES_NET50
 
-PEOPLE_PER_BATCH = 90  # must be divisible by 3
-IMAGES_PER_PERSON = 4
-BATCH_SIZE = 90  # must be divisible by 3
+MIN_IMAGES_PER_PERSON = 4
+PAIR_PER_PERSON = MIN_IMAGES_PER_PERSON - 1
+BATCH_SIZE = 32
+STUDY_SIZE = BATCH_SIZE * 1
 EMBEDDING_SIZE = 128
-NUM_PREPROCESS_THREADS = 4
 ALPHA = 0.5  # Positive to negative triplet distance margin.
 
 SHOW_INFO_INTERVAL = 100
@@ -48,6 +47,17 @@ class ImageClass:
 
     def __len__(self):
         return len(self.image_paths)
+
+
+class TripletPair:
+    def __init__(self, a, p, n):
+        self.a = a
+        self.p = p
+        self.n = n
+        self.loss = 0
+
+    def to_path(self):
+        return [self.a, self.p, self.n]
 
 
 def purge():
@@ -86,6 +96,25 @@ def log(msg, verbose=True):
     logger.info(msg)
 
 
+def study_buffer(buffer_list, size):
+    tp_list = []
+    for _ in range(size):
+        tp_list.append(buffer_list.pop())
+
+    return tp_list
+
+
+def random_batch(buffer_list, size):
+    study_sample = study_buffer(buffer_list, STUDY_SIZE)[:size]
+    study_sample = [sample.to_path() for sample in study_sample]
+    study_sample = list(map(list, zip(*study_sample)))  # transpose
+    return [y for x in study_sample for y in x]  # flatten
+
+
+def hard_batch(buffer_list, size):
+    study_sample = study_buffer(buffer_list, STUDY_SIZE)
+
+
 def main():
     args = get_parser()
 
@@ -96,7 +125,7 @@ def main():
 
     dataset = get_dataset(args.data_dir)
     total_images_cnt = np.sum([len(item) for item in dataset])
-    epoch_size = total_images_cnt // BATCH_SIZE
+    print('total image count: %d' % total_images_cnt)
 
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path, INPUT_SIZE)
@@ -111,36 +140,26 @@ def main():
             dtype=tf.float32)
         is_training = tf.placeholder_with_default(False, (), name='is_training')
 
-        batch_size_placeholder = tf.placeholder(tf.int32, name='batch_size')
-        image_paths_placeholder = tf.placeholder(tf.string, shape=(None, 3), name='image_paths')
-        labels_placeholder = tf.placeholder(tf.int64, shape=(None, 3), name='labels')
+        image_paths_placeholder = tf.placeholder(tf.string, shape=(None,), name='image_paths')
 
-        input_queue = data_flow_ops.FIFOQueue(capacity=100000,
-                                              dtypes=[tf.string, tf.int64],
-                                              shapes=[(3,), (3,)],
-                                              shared_name=None, name=None)
-        enqueue_op = input_queue.enqueue_many([image_paths_placeholder, labels_placeholder])
+        triplet_input = triplet_image_process(image_paths_placeholder)
 
-        images_and_labels = []
-        triplet_image_process(images_and_labels, input_queue)
+        with tf.name_scope('train_net'):
+            train_net = builder.input_and_train_node(triplet_input, is_training) \
+                .arch_type(MODEL) \
+                .final_layer_type(FinalLayer.G) \
+                .build()
 
-        image_batch, labels_batch = tf.train.batch_join(
-            images_and_labels, batch_size=batch_size_placeholder,
-            shapes=[(INPUT_SIZE[0], INPUT_SIZE[1], 3), ()], enqueue_many=True,
-            capacity=4 * NUM_PREPROCESS_THREADS * BATCH_SIZE,
-            allow_smaller_final_batch=True)
-        image_batch = tf.identity(image_batch, 'image_batch')
-        labels_batch = tf.identity(labels_batch, 'label_batch')
+        # with tf.name_scope('valid_net'):
+        #     val_net = builder.input_and_train_node(input_layer, is_training) \
+        #         .arch_type(MODEL) \
+        #         .final_layer_type(FinalLayer.G) \
+        #         .build(reuse=True)
 
-        net = builder.input_and_train_node(input_layer, is_training) \
-            .arch_type(MODEL) \
-            .final_layer_type(FinalLayer.G) \
-            .build()
+        l2_embeddings = tf.nn.l2_normalize(train_net.embedding, axis=1, epsilon=1e-10, name='l2_embeddings')
+        anchor, positive, negative = tf.split(l2_embeddings, 3)
 
-        l2_embeddings = tf.nn.l2_normalize(net.embedding, 1, 1e-10, name='l2_embeddings')
-        anchor, positive, negative = tf.unstack(tf.reshape(l2_embeddings, [-1, 3, EMBEDDING_SIZE]), 3, 1)
-
-        inference_loss = triplet_loss(anchor, positive, negative, ALPHA)
+        inference_loss, fail_count = triplet_loss(anchor, positive, negative, ALPHA)
         wd_loss = tf.reduce_sum(
             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), name='wd_loss')
         total_loss = tf.add(inference_loss, wd_loss, name='total_loss')
@@ -203,82 +222,59 @@ def main():
 
             have_best = False
             best_accuracy = 0
-            step = 0
+            step = 1
             try:
                 for epoch_idx in range(EPOCH):
-                    batch_idx = 0
+                    batch_idx = 1
+                    buffer_list = sample_buffer(dataset, PAIR_PER_PERSON)
+                    epoch_size = len(buffer_list) / BATCH_SIZE
                     while batch_idx < epoch_size:
                         # Select
-                        image_paths, num_per_class = sample_people(dataset, PEOPLE_PER_BATCH, IMAGES_PER_PERSON)
-                        # print('Running forward pass on sampled images: ', end='')
-                        start_time = time.time()
-                        nrof_examples = PEOPLE_PER_BATCH * IMAGES_PER_PERSON
-                        labels_array = np.reshape(np.arange(nrof_examples), (-1, 3))
-                        image_paths_array = np.reshape(np.expand_dims(np.array(image_paths), 1), (-1, 3))
-                        sess.run(enqueue_op,
-                                 {image_paths_placeholder: image_paths_array, labels_placeholder: labels_array})
-
-                        emb_array = np.zeros((nrof_examples, EMBEDDING_SIZE))
-                        nrof_batches = int(np.ceil(nrof_examples / BATCH_SIZE))
-                        for i in range(nrof_batches):
-                            batch_size = min(nrof_examples - i * BATCH_SIZE, BATCH_SIZE)
-                            imgs, labs = sess.run([image_batch, labels_batch],
-                                                  feed_dict={batch_size_placeholder: batch_size})
-
-                            emb = sess.run([l2_embeddings], feed_dict={input_layer: imgs, is_training: True})
-                            emb_array[labs, :] = emb
-
-                        # print('%.3f' % (time.time() - start_time))
-                        # print('Selecting suitable triplets for training')
-                        triplets, nrof_random_negs, nrof_triplets = select_triplets(emb_array, num_per_class,
-                                                                                    image_paths, PEOPLE_PER_BATCH,
-                                                                                    ALPHA)
-                        selection_time = time.time() - start_time
-                        # print('(nrof_random_negs, nrof_triplets) = (%d, %d): time=%.3f seconds' %
-                        #       (nrof_random_negs, nrof_triplets, selection_time))
+                        # sample = hard_batch(buffer_list, BATCH_SIZE)
+                        sample = random_batch(buffer_list, BATCH_SIZE)
 
                         # Training
-                        nrof_batches = int(np.ceil(nrof_triplets * 3 / BATCH_SIZE))
-                        triplet_paths = list(itertools.chain(*triplets))
-                        labels_array = np.reshape(np.arange(len(triplet_paths)), (-1, 3))
-                        triplet_paths_array = np.reshape(np.expand_dims(np.array(triplet_paths), 1), (-1, 3))
-                        sess.run(enqueue_op,
-                                 {image_paths_placeholder: triplet_paths_array, labels_placeholder: labels_array})
-                        nrof_examples = len(triplet_paths)
-                        i = 0
-                        emb_array = np.zeros((nrof_examples, EMBEDDING_SIZE))
-                        while i < nrof_batches:
-                            start_time = time.time()
-                            batch_size = min(nrof_examples - i * BATCH_SIZE, BATCH_SIZE)
-                            imgs, labs = sess.run([image_batch, labels_batch],
-                                                  feed_dict={batch_size_placeholder: batch_size})
-                            feed_dict = {input_layer: imgs, is_training: True}
-                            total_loss_val, inf_loss_val, wd_loss_val, _, step, emb = sess.run(
-                                [total_loss, inference_loss, wd_loss, train_op, global_step, l2_embeddings],
-                                feed_dict=feed_dict)
-                            emb_array[labs, :] = emb
-                            duration = time.time() - start_time
-                            batch_idx += 1
-                            i += 1
+                        run_dict = {
+                            'train_op': train_op,
+                            'global_step': global_step
+                        }
+                        feed_dict = {
+                            image_paths_placeholder: sample,
+                            is_training: True
+                        }
 
-                            # print training information
-                            if step % SHOW_INFO_INTERVAL == 0:
-                                label_name = [triplet_paths[l].split('/')[-2] for l in labs]
-                                show_info(epoch_idx, batch_idx, epoch_size, step,
-                                          total_loss_val, inf_loss_val, wd_loss_val, duration, emb, label_name)
-                            # save summary
-                            if step % SUMMARY_INTERVAL == 0:
-                                save_summary(step, imgs, input_layer, sess, summary, summary_op)
+                        if step % SHOW_INFO_INTERVAL == 0:
+                            run_dict['total_loss'] = total_loss
+                            run_dict['inference_loss'] = inference_loss
+                            run_dict['wd_loss'] = wd_loss
+                            run_dict['fail_count'] = fail_count
 
-                            # save ckpt files
-                            if step % CKPT_INTERVAL == 0 and not have_best:
-                                save_ckpt(step, epoch_idx, saver, sess)
+                        if step % SUMMARY_INTERVAL == 0:
+                            run_dict['summary'] = summary_op
 
-                            # validate
-                            if step % VALIDATE_INTERVAL == 0:
-                                best_accuracy = validate(best_accuracy, step,
-                                                         input_layer, net, saver, sess,
-                                                         is_training, ver_dataset)
+                        start_time = time.time()
+                        results = sess.run(run_dict, feed_dict=feed_dict)
+                        duration = time.time() - start_time
+
+                        # print training information
+                        if step % SHOW_INFO_INTERVAL == 0:
+                            show_info(epoch_idx, batch_idx, epoch_size, step, duration, results)
+
+                        # save summary
+                        if step % SUMMARY_INTERVAL == 0:
+                            save_summary(summary, results)
+
+                        # save ckpt files
+                        if step % CKPT_INTERVAL == 0 and not have_best:
+                            save_ckpt(step, epoch_idx, saver, sess)
+
+                        # # validate
+                        # if step % VALIDATE_INTERVAL == 0:
+                        #     best_accuracy = validate(best_accuracy, step,
+                        #                              input_layer, net, saver, sess,
+                        #                              is_training, ver_dataset)
+                        batch_idx += 1
+                        step +=1
             except Exception as err:
                 log('Exception, saving interrupt ckpt. err: {}'.format(err))
                 filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
@@ -287,24 +283,24 @@ def main():
                 raise err
 
 
-def triplet_image_process(images_and_labels, input_queue):
+def triplet_image_process(image_paths_placeholder):
+    def _parse(image_path):
+        file_contents = tf.read_file(image_path)
+        image = tf.image.decode_image(file_contents, channels=3)
+
+        image = tf.image.random_brightness(image, 0.2)
+        image = tf.image.random_saturation(image, 0.6, 1.6)
+        image = tf.image.random_contrast(image, 0.6, 1.4)
+        image = tf.image.random_flip_left_right(image)
+
+        # pylint: disable=no-member
+        image.set_shape((INPUT_SIZE[0], INPUT_SIZE[1], 3))
+        image = utils.tf_pre_process_image(image, INPUT_SIZE)
+
+        return image
+
     with tf.variable_scope('triplet_image_process'):
-        for _ in range(NUM_PREPROCESS_THREADS):
-            filenames, label = input_queue.dequeue()
-            images = []
-            for filename in tf.unstack(filenames):
-                file_contents = tf.read_file(filename)
-                image = tf.image.decode_image(file_contents, channels=3)
-
-                image = tf.image.random_brightness(image, 0.2)
-                image = tf.image.random_saturation(image, 0.6, 1.6)
-                image = tf.image.random_contrast(image, 0.6, 1.4)
-                image = tf.image.random_flip_left_right(image)
-
-                # pylint: disable=no-member
-                image.set_shape((INPUT_SIZE[0], INPUT_SIZE[1], 3))
-                images.append(utils.tf_pre_process_image(image, INPUT_SIZE))
-            images_and_labels.append([images, label])
+        return tf.map_fn(_parse, image_paths_placeholder, dtype=tf.float32)
 
 
 def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
@@ -333,53 +329,32 @@ def save_ckpt(step, i, saver, sess):
     saver.save(sess, filename)
 
 
-def save_summary(step, images_train, input_layer, sess,
-                 summary, summary_op):
-    feed_summary_dict = {
-        input_layer: images_train
-    }
-    summary_op_val = sess.run(summary_op, feed_dict=feed_summary_dict)
-    summary.add_summary(summary_op_val, step)
+def save_summary(summary, results):
+    summary.add_summary(results['summary'], results['global_step'])
 
 
-def show_info(epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
-              duration, emb, label_name):
-    pos_dist = np.sum(np.square(emb[0] - emb[1]))
-    neg_dist = np.sum(np.square(emb[0] - emb[2]))
-
+def show_info(epoch_idx, batch_idx, epoch_size, step, duration, results):
     log('Epoch: [%d][%d/%d], step %d, total_loss: %.2f, inf_loss: %.2f, weight_loss: '
-        '%.2f, Time %.3f, (A,P,N):(%s,%s,%s), (P,N):(%.3f,%.3f)' %
-        (epoch_idx, batch_idx, epoch_size, step, total_loss_val, inf_loss_val, wd_loss_val,
-         duration, label_name[0], label_name[1], label_name[2], pos_dist, neg_dist))
+        '%.2f, Time %.3f, Fail Rate: %.3f' %
+        (epoch_idx, batch_idx, epoch_size, step, results['total_loss'], results['inference_loss'],
+         results['wd_loss'], duration, results['fail_count']/BATCH_SIZE))
 
 
-def sample_people(dataset, people_per_batch, images_per_person):
-    nrof_images = people_per_batch * images_per_person
+def sample_buffer(dataset, pair_per_person):
+    buffer_sample = []
+    np.random.shuffle(dataset)
 
-    # Sample classes from the dataset
-    nrof_classes = len(dataset)
-    class_indices = np.arange(nrof_classes)
-    np.random.shuffle(class_indices)
+    for idx, ic in enumerate(dataset):
+        selection = ic.image_paths
+        for _ in range(pair_per_person):
+            a_path = random.choice(selection)
+            selection.remove(a_path)
+            p_path = random.choice(selection)
+            n_path = random.choice(dataset[idx - 1].image_paths)
+            buffer_sample.append(TripletPair(a_path, p_path, n_path))
 
-    i = 0
-    image_paths = []
-    num_per_class = []
-    sampled_class_indices = []
-    # Sample images from these classes until we have enough
-    while len(image_paths) < nrof_images:
-        class_index = class_indices[i]
-        nrof_images_in_class = len(dataset[class_index])
-        image_indices = np.arange(nrof_images_in_class)
-        np.random.shuffle(image_indices)
-        nrof_images_from_class = min(nrof_images_in_class, images_per_person, nrof_images - len(image_paths))
-        idx = image_indices[0:nrof_images_from_class]
-        image_paths_for_class = [dataset[class_index].image_paths[j] for j in idx]
-        sampled_class_indices += [class_index] * nrof_images_from_class
-        image_paths += image_paths_for_class
-        num_per_class.append(nrof_images_from_class)
-        i += 1
-
-    return image_paths, num_per_class
+    np.random.shuffle(buffer_sample)
+    return buffer_sample
 
 
 def get_dataset(path):
@@ -395,7 +370,7 @@ def get_dataset(path):
         image_paths = get_image_paths(facedir)
         dataset.append(ImageClass(class_name, image_paths))
 
-    dataset = [data for data in dataset if IMAGES_PER_PERSON <= len(data)]
+    dataset = [data for data in dataset if MIN_IMAGES_PER_PERSON <= len(data)]
     return dataset
 
 
