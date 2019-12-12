@@ -184,8 +184,6 @@ def main():
         with tf.Session(config=config) as sess:
 
             summary = tf.summary.FileWriter('events/', sess.graph)
-            coord = tf.train.Coordinator()
-            tf.train.start_queue_runners(coord=coord, sess=sess)
             summaries = []
 
             for grad, var in grads:
@@ -227,8 +225,8 @@ def main():
                 for epoch_idx in range(EPOCH):
                     batch_idx = 1
                     buffer_list = sample_buffer(dataset, PAIR_PER_PERSON)
-                    epoch_size = len(buffer_list) / BATCH_SIZE
-                    while batch_idx < epoch_size:
+                    epoch_size = int(len(buffer_list) / BATCH_SIZE)
+                    while batch_idx <= epoch_size:
                         # Select
                         # sample = hard_batch(buffer_list, BATCH_SIZE)
                         sample = random_batch(buffer_list, BATCH_SIZE)
@@ -274,7 +272,7 @@ def main():
                         #                              input_layer, net, saver, sess,
                         #                              is_training, ver_dataset)
                         batch_idx += 1
-                        step +=1
+                        step += 1
             except Exception as err:
                 log('Exception, saving interrupt ckpt. err: {}'.format(err))
                 filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
@@ -337,7 +335,7 @@ def show_info(epoch_idx, batch_idx, epoch_size, step, duration, results):
     log('Epoch: [%d][%d/%d], step %d, total_loss: %.2f, inf_loss: %.2f, weight_loss: '
         '%.2f, Time %.3f, Fail Rate: %.3f' %
         (epoch_idx, batch_idx, epoch_size, step, results['total_loss'], results['inference_loss'],
-         results['wd_loss'], duration, results['fail_count']/BATCH_SIZE))
+         results['wd_loss'], duration, results['fail_count'] / BATCH_SIZE))
 
 
 def sample_buffer(dataset, pair_per_person):
@@ -345,7 +343,7 @@ def sample_buffer(dataset, pair_per_person):
     np.random.shuffle(dataset)
 
     for idx, ic in enumerate(dataset):
-        selection = ic.image_paths
+        selection = ic.image_paths.copy()
         for _ in range(pair_per_person):
             a_path = random.choice(selection)
             selection.remove(a_path)
@@ -380,39 +378,6 @@ def get_image_paths(facedir):
         images = os.listdir(facedir)
         image_paths = [os.path.join(facedir, img) for img in images]
     return image_paths
-
-
-def select_triplets(embeddings, nrof_images_per_class, image_paths, people_per_batch, alpha):
-    trip_idx = 0
-    emb_start_idx = 0
-    num_trips = 0
-    triplets = []
-
-    for i in range(people_per_batch):
-        nrof_images = int(nrof_images_per_class[i])
-        for j in range(1, nrof_images):
-            a_idx = emb_start_idx + j - 1
-            neg_dists_sqr = np.sum(np.square(embeddings[a_idx] - embeddings), 1)
-            for pair in range(j, nrof_images):  # For every possible positive pair.
-                p_idx = emb_start_idx + pair
-                pos_dist_sqr = np.sum(np.square(embeddings[a_idx] - embeddings[p_idx]))
-                neg_dists_sqr[emb_start_idx:emb_start_idx + nrof_images] = np.NaN
-                all_neg = np.where(np.logical_and(neg_dists_sqr - pos_dist_sqr < alpha, pos_dist_sqr < neg_dists_sqr))[
-                    0]  # FaceNet selection
-                # all_neg = np.where(neg_dists_sqr - pos_dist_sqr < alpha)[0]  # VGG Face selection
-                nrof_random_negs = all_neg.shape[0]
-                if 0 < nrof_random_negs:
-                    rnd_idx = np.random.randint(nrof_random_negs)
-                    n_idx = all_neg[rnd_idx]
-                    triplets.append((image_paths[a_idx], image_paths[p_idx], image_paths[n_idx]))
-                    trip_idx += 1
-
-                num_trips += 1
-
-        emb_start_idx += nrof_images
-
-    np.random.shuffle(triplets)
-    return triplets, num_trips, len(triplets)
 
 
 if __name__ == '__main__':
