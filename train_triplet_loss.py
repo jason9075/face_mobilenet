@@ -26,8 +26,8 @@ MODEL = Arch.RES_NET50
 
 MIN_IMAGES_PER_PERSON = 4
 PAIR_PER_PERSON = MIN_IMAGES_PER_PERSON - 1
-BATCH_SIZE = 40
-STUDY_SIZE = BATCH_SIZE * 1
+BATCH_SIZE = 40  # is must be even number
+STUDY_SIZE = BATCH_SIZE * 6
 EMBEDDING_SIZE = 128
 ALPHA = 0.5  # Positive to negative triplet distance margin.
 
@@ -54,7 +54,6 @@ class TripletPair:
         self.a = a
         self.p = p
         self.n = n
-        self.loss = 0
 
     def to_path(self):
         return [self.a, self.p, self.n]
@@ -105,14 +104,44 @@ def study_buffer(buffer_list, size):
 
 
 def random_batch(buffer_list, size):
-    study_sample = study_buffer(buffer_list, STUDY_SIZE)[:size]
+    study_sample = study_buffer(buffer_list, size)
     study_sample = [sample.to_path() for sample in study_sample]
     study_sample = list(map(list, zip(*study_sample)))  # transpose
     return [y for x in study_sample for y in x]  # flatten
 
 
-def hard_batch(buffer_list, size):
-    study_sample = study_buffer(buffer_list, STUDY_SIZE)
+def hard_batch(sess, l2_embedding, path_node, is_training_node, buffer_list, study_size, batch_size):
+    study_sample = study_buffer(buffer_list, study_size)
+    sample_loss = np.zeros(study_size)
+
+    for idx in range(0, study_size, batch_size):
+        sample = study_sample[idx:idx + batch_size]
+        sample = [tp.to_path() for tp in sample]
+        sample = list(map(list, zip(*sample)))  # transpose
+        sample = [y for x in sample for y in x]
+
+        feed_dict = {
+            path_node: sample,
+            is_training_node: False
+        }
+        emb = sess.run(l2_embedding, feed_dict=feed_dict)
+        a_emb, p_emb, n_emb = np.split(emb, 3)
+
+        p_dist = np.sum(np.square(a_emb - p_emb), axis=1)
+        n_dist = np.sum(np.square(a_emb - n_emb), axis=1)
+        sample_loss[idx:idx + batch_size] = p_dist - n_dist
+
+    _, study_sample = zip(*sorted(zip(sample_loss, study_sample), reverse=True))
+
+    half_size = int(batch_size / 2)
+
+    hard_sample = study_sample[:half_size]
+    random_sample = np.random.choice(study_sample[half_size:], size=half_size, replace=False)
+    mix_sample = [item for sublist in zip(hard_sample, random_sample) for item in sublist]
+
+    mix_sample = [sample.to_path() for sample in mix_sample]
+    mix_sample = list(map(list, zip(*mix_sample)))  # transpose
+    return [y for x in mix_sample for y in x]  # flatten
 
 
 def main():
@@ -228,8 +257,9 @@ def main():
                 epoch_size = int(len(buffer_list) / BATCH_SIZE)
                 while batch_idx <= epoch_size:
                     # Select
-                    # sample = hard_batch(buffer_list, BATCH_SIZE)
-                    sample = random_batch(buffer_list, BATCH_SIZE)
+                    sample = hard_batch(sess, train_net, image_paths_placeholder, is_training, buffer_list,
+                                        STUDY_SIZE, BATCH_SIZE)
+                    # sample = random_batch(buffer_list, BATCH_SIZE)
 
                     # Training
                     run_dict = {
