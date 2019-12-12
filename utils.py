@@ -67,14 +67,12 @@ def get_ver_data(record_path, shape, preprocessing=True):
     return [first_list, second_list, is_same_list]
 
 
-def ver_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
+def ver_test(data_set, sess, l2_embedding_tensor, input_placeholder):
     first_list, second_list, true_same = data_set[0], data_set[1], np.array(data_set[2])
 
     dist_list = []
     for first, second in zip(first_list, second_list):
-        feed_dict[input_placeholder] = np.stack((first, second), axis=0)
-        vector_pair = sess.run(embedding_tensor, feed_dict)
-        vector_pair = preprocessing.normalize([vector_pair[0], vector_pair[1]])
+        vector_pair = sess.run(l2_embedding_tensor, feed_dict={input_placeholder: np.stack((first, second), axis=0)})
         dist = np.linalg.norm(vector_pair[0] - vector_pair[1])
         dist_list.append(dist)
 

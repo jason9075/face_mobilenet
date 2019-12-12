@@ -52,4 +52,5 @@ class NetBuilder:
         with tf.variable_scope('net', reuse=reuse):
             net = self.arch(self.input_node, self.is_train_node)
             net = self.final_layer(net)
+            net = tf.nn.l2_normalize(net, axis=1, epsilon=1e-10, name='l2_embeddings')
         return net

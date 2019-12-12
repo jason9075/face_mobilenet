@@ -4,7 +4,7 @@ import logging
 import logging.handlers as handlers
 import os
 import random
-import time
+import timeit
 from datetime import datetime
 
 import numpy as np
@@ -16,7 +16,7 @@ from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
 INPUT_SIZE = (112, 112)
-LR_STEPS = [80000, 120000, 160000]
+LR_STEPS = [60000, 120000, 160000]
 LR_VAL = [0.01, 0.005, 0.001, 0.0005]
 ACC_LOW_BOUND = 0.85
 EPOCH = 10000
@@ -124,47 +124,46 @@ def main():
     builder = NetBuilder()
 
     dataset = get_dataset(args.data_dir)
-    total_images_cnt = np.sum([len(item) for item in dataset])
-    print('total image count: %d' % total_images_cnt)
+    total_images_cnt = int(np.sum([len(item) for item in dataset]))
+    log('Total %d \'s person with %d images.' % (len(dataset), total_images_cnt))
+    log('lr values:{}'.format(LR_VAL))
+    log('lr steps:{}'.format(LR_STEPS))
 
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path, INPUT_SIZE)
 
-    with tf.Graph().as_default():
+    input_layer = tf.placeholder(
+        name='input_images',
+        shape=[None, INPUT_SIZE[0], INPUT_SIZE[1], 3],
+        dtype=tf.float32)
+    is_training = tf.placeholder_with_default(False, (), name='is_training')
 
-        global_step = tf.Variable(
-            name='global_step', initial_value=0, trainable=False)
-        input_layer = tf.placeholder(
-            name='input_images',
-            shape=[None, INPUT_SIZE[0], INPUT_SIZE[1], 3],
-            dtype=tf.float32)
-        is_training = tf.placeholder_with_default(False, (), name='is_training')
+    image_paths_placeholder = tf.placeholder(tf.string, shape=(None,), name='image_paths')
 
-        image_paths_placeholder = tf.placeholder(tf.string, shape=(None,), name='image_paths')
+    triplet_input = triplet_image_process(image_paths_placeholder)
 
-        triplet_input = triplet_image_process(image_paths_placeholder)
+    with tf.name_scope('train'):
+        train_net = builder.input_and_train_node(triplet_input, is_training) \
+            .arch_type(MODEL) \
+            .final_layer_type(FinalLayer.G) \
+            .build()
 
-        with tf.name_scope('train_net'):
-            train_net = builder.input_and_train_node(triplet_input, is_training) \
-                .arch_type(MODEL) \
-                .final_layer_type(FinalLayer.G) \
-                .build()
+    with tf.name_scope('valid'):
+        val_net = builder.input_and_train_node(input_layer, tf.constant(False)) \
+            .arch_type(MODEL) \
+            .final_layer_type(FinalLayer.G) \
+            .build(reuse=True)
 
-        # with tf.name_scope('valid_net'):
-        #     val_net = builder.input_and_train_node(input_layer, is_training) \
-        #         .arch_type(MODEL) \
-        #         .final_layer_type(FinalLayer.G) \
-        #         .build(reuse=True)
-
-        l2_embeddings = tf.nn.l2_normalize(train_net.embedding, axis=1, epsilon=1e-10, name='l2_embeddings')
-        anchor, positive, negative = tf.split(l2_embeddings, 3)
+    with tf.variable_scope('loss'):
+        anchor, positive, negative = tf.split(train_net, 3)
 
         inference_loss, fail_count = triplet_loss(anchor, positive, negative, ALPHA)
         wd_loss = tf.reduce_sum(
             tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), name='wd_loss')
         total_loss = tf.add(inference_loss, wd_loss, name='total_loss')
 
-        log('lr_steps:{}'.format(LR_STEPS))
+    with tf.variable_scope('etc'):
+        global_step = tf.train.get_or_create_global_step()
         lr = tf.train.piecewise_constant(
             global_step,
             boundaries=LR_STEPS,
@@ -174,111 +173,111 @@ def main():
         opt = tf.train.MomentumOptimizer(learning_rate=lr, momentum=MOMENTUM)
         grads = opt.compute_gradients(total_loss)
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(update_ops):
-            train_op = opt.apply_gradients(grads, global_step=global_step)
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+        train_op = opt.apply_gradients(grads, global_step=global_step)
 
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
 
-        with tf.Session(config=config) as sess:
+    total_parameters = 0
+    for variable in tf.trainable_variables():
+        shape = variable.get_shape()
+        variable_parameters = 1
+        for dim in shape:
+            variable_parameters *= dim.value
+        total_parameters += variable_parameters
+    log('Total parameters count: %d' % total_parameters)
 
-            summary = tf.summary.FileWriter('events/', sess.graph)
-            summaries = []
+    with tf.Session(config=config) as sess:
 
-            for grad, var in grads:
-                if grad is not None:
-                    summaries.append(
-                        tf.summary.histogram(var.op.name + '/gradients', grad))
+        summary = tf.summary.FileWriter('events/', sess.graph)
+        summaries = []
 
-            for var in tf.trainable_variables():
-                summaries.append(tf.summary.histogram(var.op.name, var))
+        for grad, var in grads:
+            if grad is not None:
+                summaries.append(
+                    tf.summary.histogram(var.op.name + '/gradients', grad))
 
-            summaries.append(tf.summary.scalar('loss/inference', inference_loss))
-            summaries.append(tf.summary.scalar('loss/weight_decay', wd_loss))
-            summaries.append(tf.summary.scalar('loss/total', total_loss))
-            summaries.append(tf.summary.scalar('leraning_rate', lr))
-            summary_op = tf.summary.merge(summaries)
-            saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
+        for var in tf.trainable_variables():
+            summaries.append(tf.summary.histogram(var.op.name, var))
 
-            total_parameters = 0
-            for variable in tf.trainable_variables():
-                shape = variable.get_shape()
-                variable_parameters = 1
-                for dim in shape:
-                    variable_parameters *= dim.value
-                total_parameters += variable_parameters
-            print('total parameters count: %d' % total_parameters)
+        summaries.append(tf.summary.scalar('loss/inference', inference_loss))
+        summaries.append(tf.summary.scalar('loss/weight_decay', wd_loss))
+        summaries.append(tf.summary.scalar('loss/total', total_loss))
+        summaries.append(tf.summary.scalar('learning_rate', lr))
+        summaries.append(tf.summary.scalar('fail_count', fail_count))
+        summary_op = tf.summary.merge(summaries)
+        saver = tf.train.Saver(max_to_keep=SAVER_MAX_KEEP)
 
-            sess.run(tf.global_variables_initializer())
-            sess.run(tf.local_variables_initializer())
+        sess.run(tf.global_variables_initializer())
+        sess.run(tf.local_variables_initializer())
 
-            if args.pretrain != '':
-                restore_saver = tf.train.Saver()
-                restore_saver.restore(sess,
-                                      os.path.join(MODEL_OUT_PATH, args.pretrain))
+        if args.pretrain != '':
+            restore_saver = tf.train.Saver()
+            restore_saver.restore(sess,
+                                  os.path.join(MODEL_OUT_PATH, args.pretrain))
 
-            have_best = False
-            best_accuracy = 0
-            step = 1
-            try:
-                for epoch_idx in range(EPOCH):
-                    batch_idx = 1
-                    buffer_list = sample_buffer(dataset, PAIR_PER_PERSON)
-                    epoch_size = int(len(buffer_list) / BATCH_SIZE)
-                    while batch_idx <= epoch_size:
-                        # Select
-                        # sample = hard_batch(buffer_list, BATCH_SIZE)
-                        sample = random_batch(buffer_list, BATCH_SIZE)
+        have_best = False
+        best_accuracy = 0
+        step = 1
+        try:
+            for epoch_idx in range(EPOCH):
+                batch_idx = 1
+                buffer_list = sample_buffer(dataset, PAIR_PER_PERSON)
+                epoch_size = int(len(buffer_list) / BATCH_SIZE)
+                while batch_idx <= epoch_size:
+                    # Select
+                    # sample = hard_batch(buffer_list, BATCH_SIZE)
+                    sample = random_batch(buffer_list, BATCH_SIZE)
 
-                        # Training
-                        run_dict = {
-                            'train_op': train_op,
-                            'global_step': global_step
-                        }
-                        feed_dict = {
-                            image_paths_placeholder: sample,
-                            is_training: True
-                        }
+                    # Training
+                    run_dict = {
+                        'train_op': train_op,
+                        'global_step': global_step
+                    }
+                    feed_dict = {
+                        image_paths_placeholder: sample,
+                        is_training: True
+                    }
 
-                        if step % SHOW_INFO_INTERVAL == 0:
-                            run_dict['total_loss'] = total_loss
-                            run_dict['inference_loss'] = inference_loss
-                            run_dict['wd_loss'] = wd_loss
-                            run_dict['fail_count'] = fail_count
+                    if step % SHOW_INFO_INTERVAL == 0:
+                        run_dict['total_loss'] = total_loss
+                        run_dict['inference_loss'] = inference_loss
+                        run_dict['wd_loss'] = wd_loss
+                        run_dict['fail_count'] = fail_count
 
-                        if step % SUMMARY_INTERVAL == 0:
-                            run_dict['summary'] = summary_op
+                    if step % SUMMARY_INTERVAL == 0:
+                        run_dict['summary'] = summary_op
 
-                        start_time = time.time()
-                        results = sess.run(run_dict, feed_dict=feed_dict)
-                        duration = time.time() - start_time
+                    start_time = timeit.default_timer()
+                    results = sess.run(run_dict, feed_dict=feed_dict)
+                    duration = timeit.default_timer() - start_time
 
-                        # print training information
-                        if step % SHOW_INFO_INTERVAL == 0:
-                            show_info(epoch_idx, batch_idx, epoch_size, step, duration, results)
+                    # print training information
+                    if step % SHOW_INFO_INTERVAL == 0:
+                        show_info(epoch_idx, batch_idx, epoch_size, step, duration, results)
 
-                        # save summary
-                        if step % SUMMARY_INTERVAL == 0:
-                            save_summary(summary, results)
+                    # save summary
+                    if step % SUMMARY_INTERVAL == 0:
+                        save_summary(summary, results)
 
-                        # save ckpt files
-                        if step % CKPT_INTERVAL == 0 and not have_best:
-                            save_ckpt(step, epoch_idx, saver, sess)
+                    # save ckpt files
+                    if step % CKPT_INTERVAL == 0 and not have_best:
+                        save_ckpt(step, saver, sess)
 
-                        # # validate
-                        # if step % VALIDATE_INTERVAL == 0:
-                        #     best_accuracy = validate(best_accuracy, step,
-                        #                              input_layer, net, saver, sess,
-                        #                              is_training, ver_dataset)
-                        batch_idx += 1
-                        step += 1
-            except Exception as err:
-                log('Exception, saving interrupt ckpt. err: {}'.format(err))
-                filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
-                filename = os.path.join(MODEL_OUT_PATH, filename)
-                saver.save(sess, filename)
-                raise err
+                    # validate
+                    # if step % VALIDATE_INTERVAL == 0:
+                    best_accuracy = validate(best_accuracy, step,
+                                             input_layer, val_net, saver, sess, ver_dataset)
+                    batch_idx += 1
+                    step += 1
+        except Exception as err:
+            log('Exception, saving interrupt ckpt. err: {}'.format(err))
+            filename = '{:s}_err_iter_{:d}.ckpt'.format(MODEL.name, step)
+            filename = os.path.join(MODEL_OUT_PATH, filename)
+            saver.save(sess, filename)
+            raise err
 
 
 def triplet_image_process(image_paths_placeholder):
@@ -301,18 +300,16 @@ def triplet_image_process(image_paths_placeholder):
         return tf.map_fn(_parse, image_paths_placeholder, dtype=tf.float32)
 
 
-def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
+def validate(best_accuracy, step, input_layer, net, saver, sess,
              ver_dataset):
-    feed_dict_test = {is_training: False}
     val_acc, val_thr = utils.ver_test(
         data_set=ver_dataset,
         sess=sess,
-        embedding_tensor=net.embedding,
-        feed_dict=feed_dict_test,
+        l2_embedding_tensor=net,
         input_placeholder=input_layer)
-    log('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
+    log('Test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
-        log('best accuracy is %.5f' % val_acc)
+        log('Best accuracy is %.5f' % val_acc)
         filename = '{:s}_best_{:.5f}_iter_{:d}.ckpt'.format(MODEL.name, val_acc, step)
         filename = os.path.join(MODEL_OUT_PATH, filename)
         saver.save(sess, filename)
@@ -320,8 +317,8 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
     return best_accuracy
 
 
-def save_ckpt(step, i, saver, sess):
-    log('epoch: %d, step: %d, saving ckpt.' % (i, step))
+def save_ckpt(step, saver, sess):
+    log('Step: %d, saving ckpt.' % step)
     filename = '{:s}_iter_{:d}.ckpt'.format(MODEL.name, step)
     filename = os.path.join(MODEL_OUT_PATH, filename)
     saver.save(sess, filename)
@@ -333,7 +330,7 @@ def save_summary(summary, results):
 
 def show_info(epoch_idx, batch_idx, epoch_size, step, duration, results):
     log('Epoch: [%d][%d/%d], step %d, total_loss: %.2f, inf_loss: %.2f, weight_loss: '
-        '%.2f, Time %.3f, Fail Rate: %.3f' %
+        '%.2f, time %.3f sec, fail rate: %.3f' %
         (epoch_idx, batch_idx, epoch_size, step, results['total_loss'], results['inference_loss'],
          results['wd_loss'], duration, results['fail_count'] / BATCH_SIZE))
 

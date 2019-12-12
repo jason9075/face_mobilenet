@@ -11,8 +11,7 @@ def gdc(net):
             512, (1, 1),
             name='conv',
             is_train=is_train)
-        net.embedding = dense(
-            flatten(net), 128, name='embedding', is_train=is_train)
+        net = dense(flatten(net), 128, name='embedding', is_train=is_train)
     return net
 
 
@@ -22,6 +21,6 @@ def g_type(net):
 
     with tf.variable_scope('g_type'):
         net = tf.layers.batch_normalization(input_node, name='bn', training=is_train)
-        net.embedding = dense(flatten(net), 128, name='embedding', is_train=is_train)
+        net = dense(flatten(net), 128, name='embedding', is_train=is_train)
 
     return net
