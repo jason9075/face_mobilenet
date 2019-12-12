@@ -26,7 +26,7 @@ MODEL = Arch.RES_NET50
 
 MIN_IMAGES_PER_PERSON = 4
 PAIR_PER_PERSON = MIN_IMAGES_PER_PERSON - 1
-BATCH_SIZE = 32
+BATCH_SIZE = 40
 STUDY_SIZE = BATCH_SIZE * 1
 EMBEDDING_SIZE = 128
 ALPHA = 0.5  # Positive to negative triplet distance margin.
@@ -267,9 +267,9 @@ def main():
                         save_ckpt(step, saver, sess)
 
                     # validate
-                    # if step % VALIDATE_INTERVAL == 0:
-                    best_accuracy = validate(best_accuracy, step,
-                                             input_layer, val_net, saver, sess, ver_dataset)
+                    if step % VALIDATE_INTERVAL == 0:
+                        best_accuracy = validate(best_accuracy, step,
+                                                 input_layer, val_net, saver, sess, ver_dataset)
                     batch_idx += 1
                     step += 1
         except Exception as err:
