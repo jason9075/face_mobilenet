@@ -28,6 +28,7 @@ MIN_IMAGES_PER_PERSON = 4
 PAIR_PER_PERSON = MIN_IMAGES_PER_PERSON - 1
 BATCH_SIZE = 40  # is must be even number
 STUDY_SIZE = BATCH_SIZE * 6
+STRATEGY = 'hard'
 EMBEDDING_SIZE = 128
 ALPHA = 0.5  # Positive to negative triplet distance margin.
 
@@ -54,6 +55,12 @@ class TripletPair:
         self.a = a
         self.p = p
         self.n = n
+
+    def __lt__(self, o):
+        return True
+
+    def __gt__(self, o):
+        return True
 
     def to_path(self):
         return [self.a, self.p, self.n]
@@ -254,12 +261,18 @@ def main():
             for epoch_idx in range(EPOCH):
                 batch_idx = 1
                 buffer_list = sample_buffer(dataset, PAIR_PER_PERSON)
-                epoch_size = int(len(buffer_list) / BATCH_SIZE)
+                if STRATEGY == 'hard':
+                    epoch_size = int(len(buffer_list) / STUDY_SIZE)
+                else:
+                    epoch_size = int(len(buffer_list) / BATCH_SIZE)
                 while batch_idx <= epoch_size:
                     # Select
-                    sample = hard_batch(sess, train_net, image_paths_placeholder, is_training, buffer_list,
-                                        STUDY_SIZE, BATCH_SIZE)
-                    # sample = random_batch(buffer_list, BATCH_SIZE)
+
+                    if STRATEGY == 'hard':
+                        sample = hard_batch(sess, train_net, image_paths_placeholder, is_training, buffer_list,
+                                            STUDY_SIZE, BATCH_SIZE)
+                    else:
+                        sample = random_batch(buffer_list, BATCH_SIZE)
 
                     # Training
                     run_dict = {
