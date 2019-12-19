@@ -13,7 +13,7 @@ from sklearn import preprocessing
 from tensorflow.core.protobuf import config_pb2
 
 import utils
-from backend.loss_function import combine_loss_val, pure_softmax
+from backend.loss_function import combine_loss_val
 from backend.net_builder import NetBuilder, Arch, FinalLayer
 
 MODEL_OUT_PATH = os.path.join('model_out')
@@ -114,17 +114,15 @@ def main():
             .final_layer_type(FinalLayer.G) \
             .build()
 
-        # logit = combine_loss_val(
-        #     embedding=net.embedding,
-        #     gt_labels=labels,
-        #     num_labels=NUM_CLASSES,
-        #     batch_size=BATCH_SIZE,
-        #     m1=M1,
-        #     m2=M2,
-        #     m3=M3,
-        #     s=SCALE)
-
-        logit = pure_softmax(net.embedding, NUM_CLASSES)
+        logit = combine_loss_val(
+            embedding=net.embedding,
+            gt_labels=labels,
+            num_labels=NUM_CLASSES,
+            batch_size=BATCH_SIZE,
+            m1=M1,
+            m2=M2,
+            m3=M3,
+            s=SCALE)
 
         inference_loss = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -267,7 +265,7 @@ def validate(best_accuracy, step, input_layer, net, saver, sess, is_training,
     val_acc, val_thr = utils.ver_test(
         data_set=ver_dataset,
         sess=sess,
-        embedding_tensor=net.embedding,
+        l2_embedding_tensor=net.embedding,
         feed_dict=feed_dict_test,
         input_placeholder=input_layer)
     log('test accuracy is: {}, thr: {}, last best accuracy: {}.'.format(val_acc, val_thr, best_accuracy))
@@ -338,7 +336,7 @@ def test():
         val_acc, val_thr = utils.ver_test(
             data_set=ver_dataset,
             sess=sess,
-            embedding_tensor=embedding_tensor,
+            l2_embedding_tensor=embedding_tensor,
             feed_dict=feed_dict_test,
             input_placeholder=input_tensor)
 

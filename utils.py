@@ -16,7 +16,7 @@ def parse_function(example_proto):
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
-    img = tf_pre_process_image(img)
+    img = tf_pre_process_image(img, (224, 224))
     label = tf.cast(features['label'], tf.int64)
     return img, label
 

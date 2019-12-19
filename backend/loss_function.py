@@ -2,28 +2,29 @@ from backend.layers import *
 import tensorflow as tf
 
 
-def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3,
+def combine_loss_val(l2_embedding, gt_labels, num_labels, batch_size, m1, m2, m3,
                      s):
-    with tf.variable_scope('combine_loss'):
-        ordinal = tf.range(batch_size, dtype=tf.int64)
-        ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
-
-        embedding_size = embedding.get_shape().as_list()[-1]
+    with tf.variable_scope('last_dense_weight'):
+        embedding_size = l2_embedding.get_shape().as_list()[-1]
         shape = (embedding_size, num_labels)
 
         weights = tf.get_variable(
-            name='w_embedding',
+            name='category_weight',
             shape=shape,
             initializer=WEIGHT_INIT,
             dtype=D_TYPE)
         weights = tf.nn.l2_normalize(weights, axis=0)
-        embedding = tf.nn.l2_normalize(embedding, axis=1)
 
+    with tf.variable_scope('combine_loss'):
         cos_t = tf.matmul(
-            embedding, weights, name='embedding_dense')  # fully connect dense
+            l2_embedding, weights, name='category_dense')  # fully connect dense
         if m1 == 1.0 and m2 == 0.0 and m3 == 0:
+            print('using pure softmax.')
             return tf.scalar_mul(s, cos_t)  # pure softmax
 
+        print('using combine softmax.')
+        ordinal = tf.range(batch_size, dtype=tf.int64)
+        ordinal_y = tf.stack([ordinal, gt_labels], axis=1)
         cos_t = tf.scalar_mul(s, cos_t)
         zy = tf.gather_nd(cos_t, ordinal_y)
         if m1 == 1.0 and m2 == 0.0:  # cosine face only
@@ -44,21 +45,6 @@ def combine_loss_val(embedding, gt_labels, num_labels, batch_size, m1, m2, m3,
         updated_logits = tf.add(cos_t, body, name='combine_loss_output')
 
     return updated_logits
-
-
-def pure_softmax(embedding, num_labels):
-    with tf.variable_scope('pure_softmax'):
-        embedding_size = embedding.get_shape().as_list()[-1]
-        shape = (embedding_size, num_labels)
-
-        weights = tf.get_variable(
-            name='class_weight',
-            shape=shape,
-            initializer=WEIGHT_INIT,
-            dtype=D_TYPE)
-
-    return tf.matmul(
-        embedding, weights, name='embedding_dense')  # fully connect dense
 
 
 def triplet_loss(anchor, positive, negative, alpha):
