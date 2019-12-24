@@ -17,6 +17,9 @@ def build_model(input_layer, is_training):
 
 #  mode: can be one of tf.estimator.ModeKeys.{TRAIN, EVAL, PREDICT}
 def model_fn(features, labels, mode, params):
+    if isinstance(features, dict):  # For serving
+        features = features['feature']
+
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
     images = features
@@ -58,6 +61,4 @@ def model_fn(features, labels, mode, params):
     with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
         train_op = optimizer.minimize(loss, global_step=global_step)
 
-    logging_hook = tf.train.LoggingTensorHook({"loss": loss}, every_n_iter=params.log_steps)
-
-    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[logging_hook])
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)

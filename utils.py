@@ -89,6 +89,30 @@ def ver_test(data_set, sess, l2_embedding_tensor, input_placeholder):
 
     return accs[best_threshold_index], thresholds[best_threshold_index]
 
+def ver_est_test(data_set, predict_fn):
+    first_list, second_list, true_same = data_set[0], data_set[1], np.array(data_set[2])
+
+    dist_list = []
+    for first, second in zip(first_list, second_list):
+        result1 = predict_fn({'input_image': [first]})['l2_embeddings']
+        result2 = predict_fn({'input_image': [second]})['l2_embeddings']
+
+        dist = np.linalg.norm(result1 - result2)
+        dist_list.append(dist)
+
+    thresholds = np.arange(0.1, 3.0, 0.1)
+
+    accs = []
+    for threshold in thresholds:
+        pred_same = np.less(dist_list, threshold)
+        tp = np.sum(np.logical_and(pred_same, true_same))
+        tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(true_same)))
+        acc = float(tp + tn) / len(first_list)
+        accs.append(acc)
+    best_threshold_index = int(np.argmax(accs))
+
+    return accs[best_threshold_index], thresholds[best_threshold_index]
+
 
 def lfw_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
     def data_iter(datasets, batch_size):

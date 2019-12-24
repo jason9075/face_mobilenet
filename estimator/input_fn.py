@@ -26,3 +26,9 @@ def test_input_fn(tfrecord_name, params):
     iterator = data_set.make_one_shot_iterator()
     images_train, labels_train = iterator.get_next()
     return images_train, labels_train
+
+
+def serving_input_receiver_fn():
+    input_image = tf.placeholder(dtype=tf.float32, shape=[None, 224, 224, 3], name='input_image')
+    receiver_tensors = {'input_image': input_image}
+    return tf.estimator.export.ServingInputReceiver(input_image, receiver_tensors)
