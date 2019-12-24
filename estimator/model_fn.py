@@ -45,9 +45,11 @@ def model_fn(features, labels, mode, params):
         tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=logit, labels=labels), name='inference_loss')
     accuracy = tf.metrics.accuracy(labels=labels, predictions=predictions["classes"])
+    confusion_matrix = tf.confusion_matrix(labels, predictions)
 
     if mode == tf.estimator.ModeKeys.EVAL:
-        eval_metric_ops = {"eval_accuracy": accuracy}
+        eval_metric_ops = {"eval_accuracy": accuracy,
+                           "confusion_matrix": confusion_matrix}
         return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
     # Summaries for training
