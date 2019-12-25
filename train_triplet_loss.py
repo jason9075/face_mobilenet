@@ -311,7 +311,7 @@ def main():
 
                     # validate
                     if step % VALIDATE_INTERVAL == 0:
-                        best_accuracy = validate(best_accuracy, step,
+                        best_accuracy = validate(best_accuracy, step, summary,
                                                  input_layer, val_net, saver, sess, ver_dataset)
                     batch_idx += 1
                     step += 1
@@ -343,7 +343,7 @@ def triplet_image_process(image_paths_placeholder):
         return tf.map_fn(_parse, image_paths_placeholder, dtype=tf.float32)
 
 
-def validate(best_accuracy, step, input_layer, net, saver, sess,
+def validate(best_accuracy, step, summary_writer, input_layer, net, saver, sess,
              ver_dataset):
     val_acc, val_thr = utils.ver_test(
         data_set=ver_dataset,
@@ -351,6 +351,10 @@ def validate(best_accuracy, step, input_layer, net, saver, sess,
         l2_embedding_tensor=net,
         input_placeholder=input_layer)
     log('Test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
+    summary = tf.Summary()
+    summary.value.add(tag='test/accuracy', simple_value=np.mean(val_acc))
+    summary.value.add(tag='test/thr', simple_value=val_thr)
+    summary_writer.add_summary(summary, step)
     if ACC_LOW_BOUND < val_acc and best_accuracy < val_acc:
         log('Best accuracy is %.5f' % val_acc)
         filename = '{:s}_best_{:.5f}_iter_{:d}.ckpt'.format(MODEL.name, val_acc, step)
