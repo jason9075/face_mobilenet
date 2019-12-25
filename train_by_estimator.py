@@ -21,7 +21,7 @@ def main():
 
     estimator = tf.estimator.Estimator(model_fn, params=params, config=config)
 
-    early_stopping = tf.contrib.estimator.stop_if_no_decrease_hook(
+    early_stopping = tf.estimator.experimental.stop_if_no_decrease_hook(
         estimator,
         metric_name='loss',
         max_steps_without_decrease=1000,
