@@ -48,14 +48,16 @@ def model_fn(features, labels, mode, params):
     confusion_matrix = tf.confusion_matrix(labels, predictions)
 
     if mode == tf.estimator.ModeKeys.EVAL:
-        eval_metric_ops = {"eval_accuracy": accuracy,
+        tf.summary.scalar('eval_loss', loss)
+        tf.summary.scalar('eval_accuracy', accuracy[1])
+        eval_metric_ops = {"eval_loss": loss,
+                           "eval_accuracy": accuracy,
                            "confusion_matrix": confusion_matrix}
         return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
     # Summaries for training
     tf.summary.scalar('loss', loss)
     tf.summary.scalar('accuracy', accuracy[1])
-    tf.summary.image('train_image', images, max_outputs=1)
 
     # Define training step that minimizes the loss with the Adam optimizer
     optimizer = tf.train.AdamOptimizer(params.learning_rate)
