@@ -48,11 +48,8 @@ def model_fn(features, labels, mode, params):
     confusion_matrix = tf.confusion_matrix(labels, predictions)
 
     if mode == tf.estimator.ModeKeys.EVAL:
-        tf.summary.scalar('eval_loss', loss)
-        tf.summary.scalar('eval_accuracy', accuracy[1])
         eval_metric_ops = {"eval_loss": loss,
-                           "eval_accuracy": accuracy,
-                           "confusion_matrix": confusion_matrix}
+                           "eval_accuracy": accuracy}
         return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
     # Summaries for training
