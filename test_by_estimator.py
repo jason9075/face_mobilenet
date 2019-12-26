@@ -13,7 +13,7 @@ from estimator.utils import Params
 
 
 def main():
-    gen_model()
+    # gen_model()
     test_model()
 
 
@@ -22,8 +22,12 @@ def test_model():
     subdirs = [x for x in Path(export_dir).iterdir()
                if x.is_dir() and 'temp' not in str(x)]
     latest = str(sorted(subdirs)[-1])
-    predict_fn = predictor.from_saved_model(latest)
-    
+    latest = 'model_out/saved_model/1577284216'
+    # if you want to test on cpu environment. please check below link.
+    # https://github.com/tensorflow/tensorflow/issues/17149
+    predict_fn = predictor.from_saved_model(latest,
+                                            config=tf.ConfigProto(allow_soft_placement=True))
+
     # img1 = cv2.imread('images/star224/Arak Amornsuppasiri/000001_0.jpg')
     # img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
     # img2 = cv2.imread('images/star224/Arak Amornsuppasiri/000004_0.jpg')
@@ -38,8 +42,9 @@ def test_model():
     SHAPE = (224, 224)
     verification_path = os.path.join('tfrecord', 'verification.tfrecord')
     ver_dataset = utils.get_ver_data(verification_path, SHAPE)
-    val_acc, val_thr = utils.ver_est_test(ver_dataset, predict_fn)
-    print('test accuracy is: {}, thr: {}'.format(val_acc, val_thr))
+    val_acc, val_thr, val_prec, val_rec = utils.ver_est_test(ver_dataset, predict_fn)
+    print('test accuracy is: %.3f, thr: %.2f, val_prec: %.3f, val_rec: %.3f.' %
+          (val_acc, val_thr, val_prec, val_rec))
 
 
 def gen_model():

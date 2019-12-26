@@ -13,7 +13,7 @@ def main():
     json_path = os.path.join('estimator', 'params.json')
     params = Params(json_path)
 
-    config = tf.estimator.RunConfig(tf_random_seed=9075,
+    config = tf.estimator.RunConfig(tf_random_seed=params.seed,
                                     model_dir='model_out/resnet50',
                                     save_summary_steps=params.save_summary_steps,
                                     save_checkpoints_steps=params.save_checkpoints_steps,
@@ -24,10 +24,12 @@ def main():
     early_stopping = tf.estimator.experimental.stop_if_no_decrease_hook(
         estimator,
         metric_name='loss',
-        max_steps_without_decrease=1000,
-        min_steps=10000)
+        max_steps_without_decrease=params.max_steps_without_decrease,
+        min_steps=params.min_steps,
+        run_every_secs=None,
+        run_every_steps=params.save_checkpoints_steps)
     train_spec = tf.estimator.TrainSpec(input_fn=lambda: train_input_fn('train_1036.tfrecord', params),
-                                        hooks=[early_stopping])
+                                        hooks=[])
 
     exporter = tf.estimator.BestExporter(
         name="best_exporter",

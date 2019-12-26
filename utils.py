@@ -1,4 +1,5 @@
 import datetime
+import timeit
 
 import cv2
 import numpy as np
@@ -89,29 +90,58 @@ def ver_test(data_set, sess, l2_embedding_tensor, input_placeholder):
 
     return accs[best_threshold_index], thresholds[best_threshold_index]
 
+
 def ver_est_test(data_set, predict_fn):
     first_list, second_list, true_same = data_set[0], data_set[1], np.array(data_set[2])
+    total = len(true_same)
+    same = int(np.sum(true_same))
+    diff = total - same
+    print('samples: %d, same: %d, diff: %d' % (total, same, diff))
 
     dist_list = []
+    start = timeit.default_timer()
     for first, second in zip(first_list, second_list):
         result1 = predict_fn({'input_image': [first]})['l2_embeddings']
         result2 = predict_fn({'input_image': [second]})['l2_embeddings']
 
         dist = np.linalg.norm(result1 - result2)
         dist_list.append(dist)
+    print('cost_times: %.2f' % (timeit.default_timer() - start))
 
-    thresholds = np.arange(0.1, 3.0, 0.1)
+    thresholds = np.arange(0.1, 2.0, 0.05)
 
     accs = []
+    precision = []
+    recall = []
+    tps = []
+    fps = []
+    fns = []
+    tns = []
     for threshold in thresholds:
         pred_same = np.less(dist_list, threshold)
         tp = np.sum(np.logical_and(pred_same, true_same))
         tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(true_same)))
-        acc = float(tp + tn) / len(first_list)
+        fp = diff - tn
+        fn = same - tp
+        acc = float(tp + tn) / total
         accs.append(acc)
-    best_threshold_index = int(np.argmax(accs))
+        precision.append(tp / (tp + fp))
+        recall.append(tp / (tp + fn))
+        tps.append(int(tp))
+        tns.append(int(tn))
+        fps.append(int(fp))
+        fns.append(int(fn))
+    print('thresholds:', ", ".join("%.2f" % f for f in thresholds))
+    print('accs:', ", ".join("%.2f" % f for f in accs))
+    print('precision:', ", ".join("%.2f" % f for f in precision))
+    print('recall:', ", ".join("%.2f" % f for f in recall))
+    print('tps:', ", ".join("%d" % f for f in tps))
+    print('fps:', ", ".join("%d" % f for f in fps))
+    print('fns:', ", ".join("%d" % f for f in fns))
+    print('tns:', ", ".join("%d" % f for f in tns))
+    best_index = int(np.argmax(accs))
 
-    return accs[best_threshold_index], thresholds[best_threshold_index]
+    return accs[best_index], thresholds[best_index], precision[best_index], recall[best_index]
 
 
 def lfw_test(data_set, sess, embedding_tensor, feed_dict, input_placeholder):
