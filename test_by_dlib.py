@@ -22,7 +22,7 @@ def main():
         return vector_pair
 
     # gen_model()
-    # utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC)
+    utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC)
     utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC)
 
 
