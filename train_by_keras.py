@@ -5,13 +5,15 @@ import tensorflow as tf
 
 tf.random.set_seed(9075)
 IMG_SHAPE = (224, 224, 3)
-BATCH_SIZE = 4
+BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 30000
 TRAIN_DATA_PATH = 'images/glint_tiny/'
 TEST_DATA_PATH = 'images/glint_tiny/'
 OUTPUT_MODEL_FOLDER = 'model_out/keras'
+OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
+OUTPUT_MODEL_FOLDER_BEST = 'model_out/keras_best'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
 PATIENCE = 5
 EMB_SIZE = 128
@@ -98,15 +100,17 @@ def main():
                   loss='sparse_categorical_crossentropy',
                   metrics=['sparse_categorical_accuracy'])
 
-    save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER, monitor='val_loss', verbose=1,
+    save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_BEST, monitor='val_loss', verbose=1,
                                                  save_best_only=True, save_weights_only=False,
                                                  mode='auto')
+    summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
+
     model.fit(train_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
               validation_data=test_labeled_ds.batch(BATCH_SIZE),
               validation_steps=val_steps,
-              callbacks=[EarlyStoppingAtMinLoss(), save_cb])
+              callbacks=[EarlyStoppingAtMinLoss(), save_cb, summary_cb])
 
     model.save(OUTPUT_MODEL_FOLDER)
     embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
