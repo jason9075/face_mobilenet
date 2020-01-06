@@ -9,13 +9,13 @@ BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 30000
-TRAIN_DATA_PATH = 'images/glint_tiny/'
-TEST_DATA_PATH = 'images/glint_tiny/'
+TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
+TEST_DATA_PATH = 'images/public_face_1036_224_valid/'
 OUTPUT_MODEL_FOLDER = 'model_out/keras'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_BEST = 'model_out/keras_best'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
-PATIENCE = 5
+PATIENCE = 100
 EMB_SIZE = 128
 
 

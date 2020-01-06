@@ -43,7 +43,8 @@ def pre_process_image(img, shape):
 
 
 def get_ver_data(record_path, shape, preprocessing=True):
-    record_iterator = tf.python_io.tf_record_iterator(path=record_path)
+    # record_iterator = tf.python_io.tf_record_iterator(path=record_path)
+    record_iterator = tf.compat.v1.io.tf_record_iterator(path=record_path)
     first_list = []
     second_list = []
     is_same_list = []
@@ -112,6 +113,11 @@ def ver_tfrecord(data_set, embedding_fn):
     tpr = [0 if (tp + fn == 0) else float(tp) / float(tp + fn) for tp, fn in zip(tps, fns)]
     fpr = [0 if (fp + tn == 0) else float(fp) / float(fp + tn) for fp, tn in zip(fps, tns)]
     best_index = int(np.argmax(accs))
+
+    print('tps:', ", ".join("%.2f" % f for f in tps))
+    print('tns:', ", ".join("%.2f" % f for f in tns))
+    print('fps:', ", ".join("%.2f" % f for f in fps))
+    print('fns:', ", ".join("%.2f" % f for f in fns))
 
     return accs[best_index], thresholds[best_index], tps[best_index], fps[best_index], fns[best_index], tns[
         best_index], tpr, fpr
