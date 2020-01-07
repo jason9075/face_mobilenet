@@ -128,7 +128,7 @@ def main():
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(EMB_SIZE),
-        tf.keras.layers.Activation(tf.nn.relu6),
+        # tf.keras.layers.Activation(tf.nn.relu6),
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
 
