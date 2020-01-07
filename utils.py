@@ -71,12 +71,13 @@ def get_ver_data(record_path, shape, preprocessing=True):
     return [first_list, second_list, is_same_list]
 
 
-def ver_tfrecord(data_set, embedding_fn):
+def ver_tfrecord(data_set, embedding_fn, verbose=False):
     first_list, second_list, true_same = data_set[0], data_set[1], np.array(data_set[2])
     total = len(true_same)
     same = int(np.sum(true_same))
     diff = total - same
-    print('samples: %d, same: %d, diff: %d' % (total, same, diff))
+    if verbose:
+        print('samples: %d, same: %d, diff: %d' % (total, same, diff))
 
     dist_list = []
     start = timeit.default_timer()
@@ -85,9 +86,10 @@ def ver_tfrecord(data_set, embedding_fn):
 
         dist = np.linalg.norm(result1 - result2)
         dist_list.append(dist)
-        if idx % 1000 == 0:
+        if (idx % 1000 == 0) & verbose:
             print('complete %d pairs' % idx)
-    print('cost_times: %.2f sec' % (timeit.default_timer() - start))
+    if verbose:
+        print('cost_times: %.2f sec' % (timeit.default_timer() - start))
 
     thresholds = np.arange(0.1, 3.0, 0.05)
 

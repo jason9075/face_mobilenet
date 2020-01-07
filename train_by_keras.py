@@ -1,22 +1,63 @@
+import os
 import pathlib
 
 import numpy as np
 import tensorflow as tf
+from sklearn import preprocessing
+
+import utils
 
 tf.random.set_seed(9075)
 IMG_SHAPE = (224, 224, 3)
+SHAPE = (224, 224)
 BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 30000
 TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
+# TRAIN_DATA_PATH = 'images/star224/'
 TEST_DATA_PATH = 'images/public_face_1036_224_valid/'
+# TEST_DATA_PATH = 'images/star224/'
 OUTPUT_MODEL_FOLDER = 'model_out/keras'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
-OUTPUT_MODEL_FOLDER_BEST = 'model_out/keras_best'
+OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
 PATIENCE = 100
 EMB_SIZE = 128
+
+
+class SaveBestValCallback(tf.keras.callbacks.Callback):
+
+    def __init__(self):
+        super().__init__()
+        self.embedding_model = None
+        self.best_acc = 0
+
+    def set_model(self, model):
+        print('set_model')
+        self.model = model
+        embedding = model.layers[4].output
+        self.embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding)
+
+    def on_epoch_end(self, epoch, logs=None):
+        verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+        ver_dataset = utils.get_ver_data(verification_path, SHAPE)
+
+        def embedding_fn(img1, img2):
+            h, w, _ = img1.shape
+            result1 = self.embedding_model.predict(np.expand_dims(img1, axis=0))
+            result2 = self.embedding_model.predict(np.expand_dims(img2, axis=0))
+            result1 = preprocessing.normalize(result1, norm='l2')
+            result2 = preprocessing.normalize(result2, norm='l2')
+
+            return result1, result2
+
+        val_acc, val_thr, _, _, _, _, _, _ = utils.ver_tfrecord(ver_dataset, embedding_fn, verbose=True)
+        print('val_acc: %f, val_thr: %f ' % (val_acc, val_thr))
+        if self.best_acc < val_acc:
+            print('best_acc < val_acc | %f < %f ' % (self.best_acc, val_acc))
+            self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
+            self.best_acc = val_acc
 
 
 def get_label(file_path):
@@ -91,18 +132,15 @@ def main():
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
 
-    embedding = model.layers[4].output
-    embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding)
-
     model.summary()
 
     model.compile(optimizer=tf.keras.optimizers.Adam(),
                   loss='sparse_categorical_crossentropy',
                   metrics=['sparse_categorical_accuracy'])
 
-    save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_BEST, monitor='val_loss', verbose=1,
-                                                 save_best_only=True, save_weights_only=False,
-                                                 mode='auto')
+    save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_CKPT, monitor='val_loss', verbose=1,
+                                                 save_weights_only=False, mode='auto')
+
     summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
 
     model.fit(train_ds,
@@ -110,12 +148,9 @@ def main():
               steps_per_epoch=steps_per_epoch,
               validation_data=test_labeled_ds.batch(BATCH_SIZE),
               validation_steps=val_steps,
-              callbacks=[EarlyStoppingAtMinLoss(), save_cb, summary_cb])
+              callbacks=[SaveBestValCallback(), save_cb, summary_cb])
 
-    model.save(OUTPUT_MODEL_FOLDER)
-    embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
-
-    loss, accuracy = model.evaluate(test_labeled_ds.batch(3), verbose=2)
+    loss, accuracy = model.evaluate(test_labeled_ds.batch(BATCH_SIZE), verbose=2)
     print("Loss :", loss)
     print("Accuracy :", accuracy)
 
