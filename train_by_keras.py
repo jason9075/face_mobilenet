@@ -34,7 +34,6 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         self.best_acc = 0
 
     def set_model(self, model):
-        print('set_model')
         self.model = model
         embedding = model.layers[4].output
         self.embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding)
@@ -43,19 +42,36 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         verification_path = os.path.join('tfrecord', 'verification.tfrecord')
         ver_dataset = utils.get_ver_data(verification_path, SHAPE)
 
-        def embedding_fn(img1, img2):
+        first_list, second_list, true_same = ver_dataset[0], ver_dataset[1], np.array(ver_dataset[2])
+        total = len(true_same)
+
+        dist_list = []
+        for idx, (img1, img2) in enumerate(zip(first_list, second_list)):
             h, w, _ = img1.shape
             result1 = self.embedding_model.predict(np.expand_dims(img1, axis=0))
             result2 = self.embedding_model.predict(np.expand_dims(img2, axis=0))
             result1 = preprocessing.normalize(result1, norm='l2')
             result2 = preprocessing.normalize(result2, norm='l2')
 
-            return result1, result2
+            dist = np.linalg.norm(result1 - result2)
+            dist_list.append(dist)
 
-        val_acc, val_thr, _, _, _, _, _, _ = utils.ver_tfrecord(ver_dataset, embedding_fn, verbose=True)
-        print('val_acc: %f, val_thr: %f ' % (val_acc, val_thr))
+        thresholds = np.arange(0.1, 3.0, 0.05)
+
+        accs = []
+        for threshold in thresholds:
+            pred_same = np.less(dist_list, threshold)
+            tp = np.sum(np.logical_and(pred_same, true_same))
+            tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(true_same)))
+            acc = float(tp + tn) / total
+            accs.append(acc)
+        best_index = int(np.argmax(accs))
+
+        val_acc = accs[best_index]
+        val_thr = thresholds[best_index]
+
+        print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
         if self.best_acc < val_acc:
-            print('best_acc < val_acc | %f < %f ' % (self.best_acc, val_acc))
             self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
             self.best_acc = val_acc
 
@@ -121,14 +137,14 @@ def main():
     test_labeled_ds = test_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 
     base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-
+    base_model.summary()
+    exit(0)
     model = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(EMB_SIZE),
-        # tf.keras.layers.Activation(tf.nn.relu6),
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
 

@@ -16,8 +16,8 @@ RESTORE_BY_WEIGHT = True
 
 def main():
     if RESTORE_BY_WEIGHT:
-        # model = tf.keras.models.load_model('model_out/keras_best')
-        # model.save_weights('model_out/keras_best/weight.h5')
+        model = tf.keras.models.load_model('model_out/keras_best')
+        model.save_weights('model_out/keras_best/weight.h5')
         model = restore_weight('model_out/keras_best/weight.h5')
     else:
         model = tf.keras.models.load_model('model_out/keras_embedding')
@@ -32,7 +32,7 @@ def main():
         return result1, result2
 
     # gen_model()
-    utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC)
+    utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC, verbose=True)
     # utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC)
 
 

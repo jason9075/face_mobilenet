@@ -192,11 +192,11 @@ def load_bin(bin_path, input_size):
     return first_imgs, second_imgs, np.repeat(issame_list, 2)
 
 
-def test_tfrecord(tfrecord, embedding_fn, shape, is_plot=False):
+def test_tfrecord(tfrecord, embedding_fn, shape, is_plot=False, verbose=False):
     verification_path = os.path.join('tfrecord', tfrecord)
     ver_dataset = get_ver_data(verification_path, shape)
 
-    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn)
+    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn, verbose=verbose)
     print('test accuracy is: %.3f, thr: %.2f, prec: %.3f, rec: %.3f.' %
           (val_acc, val_thr, float(tp) / (tp + fp), float(tp) / (tp + fn)))
 
