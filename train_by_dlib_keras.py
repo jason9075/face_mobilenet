@@ -35,6 +35,23 @@ class DummyLayer(tf.keras.layers.Layer):
         return inputs
 
 
+class L2WeightLayer(tf.keras.layers.Layer):
+    def __init__(self, num_outputs):
+        super(L2WeightLayer, self).__init__()
+        self.num_outputs = num_outputs
+        self.kernel = None
+
+    def build(self, input_shape):
+        self.kernel = self.add_variable("kernel",
+                                        shape=[int(input_shape[-1]),
+                                               self.num_outputs])
+
+    def call(self, inputs, **kwargs):
+        kernel = tf.nn.l2_normalize(self.kernel, axis=0)
+        kernel = tf.matmul(input, kernel)
+        return tf.nn.softmax(kernel)
+
+
 def get_label(file_path):
     parts = tf.strings.split(file_path, '/')
     one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.int8)
@@ -101,7 +118,7 @@ def main():
     model = tf.keras.Sequential([
         keras_model,
         DummyLayer(),
-        tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
+        L2WeightLayer(len(CLASS_NAMES)),
     ])
 
     model.summary()
@@ -119,7 +136,8 @@ def main():
               steps_per_epoch=steps_per_epoch,
               validation_data=test_labeled_ds.batch(BATCH_SIZE),
               validation_steps=val_steps,
-              callbacks=[save_cb, SaveBestValCallback(), summary_cb])
+              callbacks=[SaveBestValCallback()])
+              # callbacks=[save_cb, SaveBestValCallback(), summary_cb])
 
     loss, accuracy = model.evaluate(test_labeled_ds.batch(BATCH_SIZE), verbose=2)
     print("Loss :", loss)
