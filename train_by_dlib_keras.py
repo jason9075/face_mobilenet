@@ -35,6 +35,14 @@ class DummyLayer(tf.keras.layers.Layer):
         return inputs
 
 
+class L2EmbeddingLayer(tf.keras.layers.Layer):
+    def __init__(self):
+        super(L2EmbeddingLayer, self).__init__()
+
+    def call(self, inputs, **kwargs):
+        return tf.nn.l2_normalize(inputs, axis=1)
+
+
 class L2WeightLayer(tf.keras.layers.Layer):
     def __init__(self, num_outputs):
         super(L2WeightLayer, self).__init__()
@@ -117,7 +125,7 @@ def main():
 
     model = tf.keras.Sequential([
         keras_model,
-        DummyLayer(),
+        L2EmbeddingLayer(),
         L2WeightLayer(len(CLASS_NAMES)),
     ])
 
@@ -137,7 +145,7 @@ def main():
               validation_data=test_labeled_ds.batch(BATCH_SIZE),
               validation_steps=val_steps,
               callbacks=[SaveBestValCallback()])
-              # callbacks=[save_cb, SaveBestValCallback(), summary_cb])
+    # callbacks=[save_cb, SaveBestValCallback(), summary_cb])
 
     loss, accuracy = model.evaluate(test_labeled_ds.batch(BATCH_SIZE), verbose=2)
     print("Loss :", loss)
