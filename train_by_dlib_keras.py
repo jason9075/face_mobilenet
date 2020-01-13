@@ -48,7 +48,7 @@ class L2WeightLayer(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         kernel = tf.nn.l2_normalize(self.kernel, axis=0)
-        kernel = tf.matmul(input, kernel)
+        kernel = tf.matmul(inputs, kernel)
         return tf.nn.softmax(kernel)
 
 
