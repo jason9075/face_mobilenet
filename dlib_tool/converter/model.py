@@ -239,6 +239,6 @@ def build_dlib_model(image_h=150, image_w=150, use_bn=False):
 
     x = KL.GlobalAveragePooling2D()(x)
 
-    embedding = KL.Dense(128, name="embedding_layer", use_bias=False)(x)    
+    # embedding = KL.Dense(128, name="embedding_layer", use_bias=False)(x)
 
-    return KM.Model(inputs=img_input, outputs=embedding)
+    return KM.Model(inputs=img_input, outputs=x)

@@ -3,7 +3,9 @@ import pathlib
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.models import Model
 from sklearn import preprocessing
+from tensorflow_core.python.keras.layers import Input, Dense
 
 import utils
 from dlib_tool.converter.model import build_dlib_model
@@ -18,13 +20,13 @@ CLASS_NAMES = np.array([])
 EPOCHS = 30000
 TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
 # TRAIN_DATA_PATH = 'images/star224/'
-TEST_DATA_PATH = 'images/public_face_1036_224_valid/'
-# TEST_DATA_PATH = 'images/star224/'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
 PATIENCE = 100
 EMB_SIZE = 128
+IS_CENTER_LOSS = True
+CENTER_LOSS_LAMBDA = 0.01
 
 
 class DummyLayer(tf.keras.layers.Layer):
@@ -60,30 +62,68 @@ class L2WeightLayer(tf.keras.layers.Layer):
         return tf.nn.softmax(kernel)
 
 
+class CenterLossLayer(tf.keras.layers.Layer):
+    def __init__(self, nrof_classes, alpha=0.5, **kwargs):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+        self.centers = None
+        self.nrof_classes = nrof_classes
+        self.result = None
+
+    def build(self, input_shape):
+        self.centers = self.add_weight(name='centers',
+                                       shape=(self.nrof_classes, input_shape[0][-1]),
+                                       initializer='uniform',
+                                       trainable=False)
+
+    def call(self, inputs, mask=None):
+        # inputs[0] = embedding, inputs[1] = gt_labels
+        # update first
+        delta_centers = tf.matmul(tf.transpose(inputs[1]), (tf.matmul(inputs[1], self.centers) - inputs[0]))
+        center_counts = tf.math.reduce_sum(tf.transpose(inputs[1]), axis=1, keepdims=True) + 1
+        delta_centers /= center_counts
+        new_centers = self.centers - self.alpha * delta_centers
+        self.add_update((self.centers, new_centers), inputs)
+
+        # then calculate loss
+        result = inputs[0] - tf.matmul(inputs[1], self.centers)
+        self.result = tf.math.reduce_sum(result ** 2, axis=1, keepdims=True)
+        return self.result  # Nx1
+
+    def compute_output_shape(self, input_shape):
+        return tf.shape(self.result)
+
+
 def get_label(file_path):
     parts = tf.strings.split(file_path, '/')
-    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.int8)
-    return tf.argmax(one_hot)
+    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.float32)
+    return tf.argmax(one_hot), one_hot
 
 
 def decode_img(img):
-    img = tf.image.decode_jpeg(img, channels=3)  # value from 0 ~ 1
-    img = tf.image.convert_image_dtype(img, tf.float32)
+    img = tf.image.decode_jpeg(img, channels=3)
     img = tf.image.resize(img, [IMG_SHAPE[0], IMG_SHAPE[1]])
     img = tf.image.random_brightness(img, 0.2)
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
-    img = tf.subtract(img, 0.5)
-    img = tf.multiply(img, 2)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    img = tf.subtract(img, 127.5)
+    img = tf.multiply(img, 0.0078125)
     return img
 
 
 def process_path(file_path):
-    label = get_label(file_path)
+    label, one_hot = get_label(file_path)
     img = tf.io.read_file(file_path)
     img = decode_img(img)
-    return img, label
+    return img, one_hot, label
+
+
+def process_onehot(file_path):
+    parts = tf.strings.split(file_path, '/')
+    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.int8)
+    return one_hot, tf.constant(0)  # second is dummy
 
 
 def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
@@ -101,55 +141,57 @@ def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
     return ds
 
 
+def zero_loss(y_true, y_pred):  # y_true is dummy
+    print(y_pred)
+    return 0.5 * tf.reduce_sum(y_pred, axis=0)
+
+
 def main():
     global CLASS_NAMES
 
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
-    list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))
+    train_list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))
     CLASS_NAMES = np.array([item.name for item in train_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
-    test_data_dir = pathlib.Path(TEST_DATA_PATH)
-    test_list_ds = tf.data.Dataset.list_files(str(test_data_dir / '*/*.jpg'))
     train_image_count = len(list(train_data_dir.glob('*/*.jpg')))
-    test_image_count = len(list(test_data_dir.glob('*/*.jpg')))
     steps_per_epoch = np.ceil(train_image_count / BATCH_SIZE)
-    val_steps = np.ceil(test_image_count / BATCH_SIZE)
 
     print('total labels: %d' % len(CLASS_NAMES))
 
-    train_labeled_ds = list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
-    train_ds = prepare_for_training(train_labeled_ds)
-    test_labeled_ds = test_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
+    train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
+    train_main_ds = prepare_for_training(train_main_ds)
+    # train_side_ds = train_list_ds.map(process_onehot, num_parallel_calls=AUTOTUNE)
+    # train_side_ds = prepare_for_training(train_side_ds)
 
     keras_model = build_dlib_model(image_h=SHAPE[0], image_w=SHAPE[1], use_bn=True)
     load_weights(keras_model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
 
-    model = tf.keras.Sequential([
-        keras_model,
-        L2EmbeddingLayer(),
-        L2WeightLayer(len(CLASS_NAMES)),
-    ])
+    main_input = Input(IMG_SHAPE)
+    side_input = Input(len(CLASS_NAMES))
+
+    x = keras_model(main_input)
+    x = Dense(EMB_SIZE)(x)
+    main_loss = L2WeightLayer(len(CLASS_NAMES))(x)
+    side_loss = CenterLossLayer(len(CLASS_NAMES))([x, side_input])
+
+    model = Model(inputs=[main_input, side_input], outputs=[main_loss, side_loss])
+    model.compile(optimizer=tf.keras.optimizers.Adam(),
+                  loss=['sparse_categorical_crossentropy', zero_loss],
+                  loss_weights=[1, CENTER_LOSS_LAMBDA],
+                  metrics=['sparse_categorical_accuracy'])
 
     model.summary()
-
-    model.compile(optimizer=tf.keras.optimizers.Adam(),
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['sparse_categorical_accuracy'])
 
     save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_CKPT, monitor='val_loss', verbose=1,
                                                  save_weights_only=False, mode='auto')
     summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
 
-    model.fit(train_ds,
+    # iter = train_main_ds.make_one_shot_iterator()
+    # result = model.predict(iter.get_next())
+    model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              validation_data=test_labeled_ds.batch(BATCH_SIZE),
-              validation_steps=val_steps,
-              callbacks=[SaveBestValCallback()])
+              callbacks=[SaveBestValCallback(), summary_cb])
     # callbacks=[save_cb, SaveBestValCallback(), summary_cb])
-
-    loss, accuracy = model.evaluate(test_labeled_ds.batch(BATCH_SIZE), verbose=2)
-    print("Loss :", loss)
-    print("Accuracy :", accuracy)
 
 
 class SaveBestValCallback(tf.keras.callbacks.Callback):
@@ -161,8 +203,8 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
     def set_model(self, model):
         self.model = model
-        embedding = model.layers[1].output
-        self.embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding)
+        embedding = model.layers[2].output
+        self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding)
 
     def on_epoch_end(self, epoch, logs=None):
         verification_path = os.path.join('tfrecord', 'verification.tfrecord')

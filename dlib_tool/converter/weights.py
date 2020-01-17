@@ -51,6 +51,6 @@ def load_weights(model, xml_weights, use_affine=False):
         reversed_affine_layers_info = affine_layers_info[::-1]
         load_weights_in_affine_layers(model, reversed_affine_layers_info)
 
-    fc_weights = get_fc_weights(xdict)
-    load_weights_in_fc_layer(model, fc_weights)
+    # fc_weights = get_fc_weights(xdict)
+    # load_weights_in_fc_layer(model, fc_weights)
 
