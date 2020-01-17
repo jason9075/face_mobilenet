@@ -186,16 +186,7 @@ def _residualDown(x, num_filters, filters, stage_num, conv_layer_counter,
     return c1, conv_layer_counter
 
 
-def build_dlib_model(image_h=150, image_w=150, use_bn=False):
-
-    if K.image_data_format() == 'channels_last':
-        batch_input_shape = (1, image_h, image_w, 3)
-        input_shape = (image_h, image_w, 3)
-    else:
-        batch_input_shape = (1, 3, image_h, image_w)
-        input_shape = (3, image_h, image_w)
-
-    img_input = KL.Input(shape=input_shape, name='input_image')
+def build_dlib_model(img_input, use_bn=False):
 
     conv_layer_counter = 0
 

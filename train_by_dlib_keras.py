@@ -117,7 +117,7 @@ def process_path(file_path):
     label, one_hot = get_label(file_path)
     img = tf.io.read_file(file_path)
     img = decode_img(img)
-    return img, one_hot, label
+    return (img, one_hot), (label, tf.constant(0))
 
 
 def process_onehot(file_path):
@@ -162,12 +162,11 @@ def main():
     # train_side_ds = train_list_ds.map(process_onehot, num_parallel_calls=AUTOTUNE)
     # train_side_ds = prepare_for_training(train_side_ds)
 
-    keras_model = build_dlib_model(image_h=SHAPE[0], image_w=SHAPE[1], use_bn=True)
-    load_weights(keras_model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
-
     main_input = Input(IMG_SHAPE)
     side_input = Input(len(CLASS_NAMES))
 
+    keras_model = build_dlib_model(main_input, use_bn=True)
+    load_weights(keras_model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
     x = keras_model(main_input)
     x = Dense(EMB_SIZE)(x)
     main_loss = L2WeightLayer(len(CLASS_NAMES))(x)
