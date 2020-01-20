@@ -12,17 +12,19 @@ from dlib_tool.converter.model import build_dlib_model
 from dlib_tool.converter.weights import load_weights
 
 tf.random.set_seed(9075)
-IMG_SHAPE = (224, 224, 3)
-SHAPE = (224, 224)
+IMG_SHAPE = (112, 112, 3)
+SHAPE = (112, 112)
 BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 30000
-TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
-# TRAIN_DATA_PATH = 'images/star224/'
+# TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
+TRAIN_DATA_PATH = 'images/glint_2w/'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
+VER_NAME = 'astra_test_align.tfrecord'
+# VER_NAME = 'verification.tfrecord'
 PATIENCE = 100
 EMB_SIZE = 128
 IS_CENTER_LOSS = True
@@ -203,10 +205,10 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
     def set_model(self, model):
         self.model = model
         embedding = model.get_layer(name='embedding')
-        self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding)
+        self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
-        verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+        verification_path = os.path.join('tfrecord', VER_NAME)
         ver_dataset = utils.get_ver_data(verification_path, SHAPE)
 
         first_list, second_list, true_same = ver_dataset[0], ver_dataset[1], np.array(ver_dataset[2])
