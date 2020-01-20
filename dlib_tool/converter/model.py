@@ -232,4 +232,4 @@ def build_dlib_model(img_input, use_bn=False):
 
     # embedding = KL.Dense(128, name="embedding_layer", use_bias=False)(x)
 
-    return KM.Model(inputs=img_input, outputs=x)
+    return x

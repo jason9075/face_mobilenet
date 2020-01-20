@@ -46,8 +46,8 @@ class L2EmbeddingLayer(tf.keras.layers.Layer):
 
 
 class L2WeightLayer(tf.keras.layers.Layer):
-    def __init__(self, num_outputs):
-        super(L2WeightLayer, self).__init__()
+    def __init__(self, num_outputs, **kwargs):
+        super(L2WeightLayer, self).__init__(**kwargs)
         self.num_outputs = num_outputs
         self.kernel = None
 
@@ -110,6 +110,7 @@ def decode_img(img):
     img = tf.image.convert_image_dtype(img, tf.float32)
     img = tf.subtract(img, 127.5)
     img = tf.multiply(img, 0.0078125)
+    img = tf.clip_by_value(img, 0.0, 1.0)
     return img
 
 
@@ -142,7 +143,6 @@ def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
 
 
 def zero_loss(y_true, y_pred):  # y_true is dummy
-    print(y_pred)
     return 0.5 * tf.reduce_sum(y_pred, axis=0)
 
 
@@ -159,24 +159,22 @@ def main():
 
     train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
     train_main_ds = prepare_for_training(train_main_ds)
-    # train_side_ds = train_list_ds.map(process_onehot, num_parallel_calls=AUTOTUNE)
-    # train_side_ds = prepare_for_training(train_side_ds)
 
     main_input = Input(IMG_SHAPE)
     side_input = Input(len(CLASS_NAMES))
 
-    keras_model = build_dlib_model(main_input, use_bn=True)
-    load_weights(keras_model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
-    x = keras_model(main_input)
-    x = Dense(EMB_SIZE)(x)
-    main_loss = L2WeightLayer(len(CLASS_NAMES))(x)
-    side_loss = CenterLossLayer(len(CLASS_NAMES))([x, side_input])
+    x = build_dlib_model(main_input, use_bn=True)
+    x = Dense(EMB_SIZE, name='embedding')(x)
+    main_loss = L2WeightLayer(len(CLASS_NAMES), name='main')(x)
+    side_loss = CenterLossLayer(len(CLASS_NAMES), name='center')([x, side_input])
 
     model = Model(inputs=[main_input, side_input], outputs=[main_loss, side_loss])
+    load_weights(model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
+
     model.compile(optimizer=tf.keras.optimizers.Adam(),
                   loss=['sparse_categorical_crossentropy', zero_loss],
                   loss_weights=[1, CENTER_LOSS_LAMBDA],
-                  metrics=['sparse_categorical_accuracy'])
+                  metrics={'main': 'sparse_categorical_accuracy'})
 
     model.summary()
 
@@ -185,7 +183,9 @@ def main():
     summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
 
     # iter = train_main_ds.make_one_shot_iterator()
-    # result = model.predict(iter.get_next())
+    # next = iter.get_next()
+    # result = model.predict([next[0][0], next[0][1], next[1][0], next[1][1])
+
     model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
@@ -202,7 +202,7 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
     def set_model(self, model):
         self.model = model
-        embedding = model.layers[2].output
+        embedding = model.get_layer(name='embedding')
         self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding)
 
     def on_epoch_end(self, epoch, logs=None):
