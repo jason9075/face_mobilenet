@@ -13,7 +13,7 @@ from dlib_tool.converter.model import build_dlib_model
 from dlib_tool.converter.weights import load_weights
 
 tf.random.set_seed(9075)
-SIZE = 224
+SIZE = 150
 IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
 BATCH_SIZE = 64
@@ -62,8 +62,8 @@ class L2WeightLayer(tf.keras.layers.Layer):
 
     def call(self, inputs, **kwargs):
         kernel = tf.nn.l2_normalize(self.kernel, axis=0)
-        kernel = tf.matmul(inputs, kernel)
-        return tf.nn.softmax(kernel)
+        result = tf.matmul(inputs, kernel)
+        return tf.nn.softmax(result)
 
 
 class CenterLossLayer(tf.keras.layers.Layer):
@@ -172,11 +172,11 @@ def main():
     x = Flatten()(x)
     x = Dense(EMB_SIZE, name='embedding', use_bias=False)(x)
     x = Activation(tf.nn.relu6)(x)
-    main_loss = L2WeightLayer(len(CLASS_NAMES), name='main')(x)
+    main_loss = Dense(len(CLASS_NAMES), name='main', activation=tf.nn.softmax)(x)
     side_loss = CenterLossLayer(len(CLASS_NAMES), name='center')([x, side_input])
 
     model = Model(inputs=[main_input, side_input], outputs=[main_loss, side_loss])
-    load_weights(model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml')
+    load_weights(model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml', use_bn=True)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(),
                   loss=['sparse_categorical_crossentropy', zero_loss],
@@ -259,8 +259,9 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
 
 def model_record(model, prefix=''):
-    img = cv2.imread('images/public_face_1036_224_train/Ananda Everingham/000001_0.jpg')
+    img = cv2.imread('images/0001_01.png')
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, SHAPE)
     img = img - 127.5
     img = img * 0.0078125
 

@@ -3,11 +3,14 @@ import numpy as np
 from .xml_analyzer import parse_xml, get_conv_weights, get_affine_weights, get_fc_weights
 
 
-def load_weights_in_affine_layers(model, reversed_affine_layers_info):
+def load_weights_in_affine_layers(model, reversed_affine_layers_info, use_bn=True):
     # Load weights in the affine layers
     for af in reversed_affine_layers_info:
         g, b = np.split(af['weights'], 2)
-        model.get_layer(af['name']).set_weights([g, b])
+        if use_bn:
+            model.get_layer(af['name'].replace('sc', 'bn')).set_weights([g, b, np.zeros(b.shape), np.ones(g.shape)])
+        else:
+            model.get_layer(af['name']).set_weights([g, b])
 
 
 def load_weights_in_conv_layers(model, reversed_conv_layers_info):
@@ -39,18 +42,16 @@ def load_weights_in_fc_layer(model, fc_weights):
     model.get_layer("embedding").set_weights([reshaped_fcw])
 
 
-def load_weights(model, xml_weights, use_affine=False):
+def load_weights(model, xml_weights, use_bn=False):
     xdict = parse_xml(xml_weights)
 
     conv_layers_info = get_conv_weights(xdict)
     reversed_conv_layers_info = conv_layers_info[::-1]
     load_weights_in_conv_layers(model, reversed_conv_layers_info)
 
-    if use_affine:
-        affine_layers_info = get_affine_weights(xdict)
-        reversed_affine_layers_info = affine_layers_info[::-1]
-        load_weights_in_affine_layers(model, reversed_affine_layers_info)
+    affine_layers_info = get_affine_weights(xdict)
+    reversed_affine_layers_info = affine_layers_info[::-1]
+    load_weights_in_affine_layers(model, reversed_affine_layers_info, use_bn=use_bn)
 
     fc_weights = get_fc_weights(xdict)
     load_weights_in_fc_layer(model, fc_weights)
-
