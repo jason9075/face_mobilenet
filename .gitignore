@@ -139,3 +139,4 @@ log/*
 !log/.keep
 
 /dlib_tool/dlib_face_recognition_resnet_model_v1.xml
+/record.txt

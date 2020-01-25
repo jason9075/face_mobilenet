@@ -84,14 +84,15 @@ def get_label(file_path):
 
 def decode_img(img):
     img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.convert_image_dtype(img, tf.float32)  # value from 0 ~ 1
     img = tf.image.resize(img, [IMG_SHAPE[0], IMG_SHAPE[1]])
     img = tf.image.random_brightness(img, 0.2)
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
-    img = tf.subtract(img, 0.5)
-    img = tf.multiply(img, 2)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    img = tf.subtract(img, 127.5)
+    img = tf.multiply(img, 0.0078125)
+    img = tf.clip_by_value(img, 0.0, 1.0)
     return img
 
 
@@ -138,7 +139,7 @@ def main():
 
     base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     base_model.summary()
-    exit(0)
+
     model = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),

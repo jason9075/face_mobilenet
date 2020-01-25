@@ -1,30 +1,32 @@
 import os
 import pathlib
 
+import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
 from sklearn import preprocessing
-from tensorflow_core.python.keras.layers import Input, Dense
+from tensorflow_core.python.keras.layers import Input, Dense, Flatten, BatchNormalization, Activation
 
 import utils
 from dlib_tool.converter.model import build_dlib_model
 from dlib_tool.converter.weights import load_weights
 
 tf.random.set_seed(9075)
-IMG_SHAPE = (112, 112, 3)
-SHAPE = (112, 112)
+SIZE = 224
+IMG_SHAPE = (SIZE, SIZE, 3)
+SHAPE = (SIZE, SIZE)
 BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
-EPOCHS = 30000
-# TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
-TRAIN_DATA_PATH = 'images/glint_2w/'
+EPOCHS = 10
+TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
+# TRAIN_DATA_PATH = 'images/glint_2w/'
+VER_NAME = 'verification.tfrecord'
+# VER_NAME = 'astra_test_align.tfrecord'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
-VER_NAME = 'astra_test_align.tfrecord'
-# VER_NAME = 'verification.tfrecord'
 PATIENCE = 100
 EMB_SIZE = 128
 IS_CENTER_LOSS = True
@@ -166,7 +168,10 @@ def main():
     side_input = Input(len(CLASS_NAMES))
 
     x = build_dlib_model(main_input, use_bn=True)
-    x = Dense(EMB_SIZE, name='embedding')(x)
+    # x = BatchNormalization()(x)
+    x = Flatten()(x)
+    x = Dense(EMB_SIZE, name='embedding', use_bias=False)(x)
+    x = Activation(tf.nn.relu6)(x)
     main_loss = L2WeightLayer(len(CLASS_NAMES), name='main')(x)
     side_loss = CenterLossLayer(len(CLASS_NAMES), name='center')([x, side_input])
 
@@ -188,10 +193,18 @@ def main():
     # next = iter.get_next()
     # result = model.predict([next[0][0], next[0][1], next[1][0], next[1][1])
 
+    write_line('start:')
+    debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
+                    'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
+                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding']
+    for layer in debug_layers:
+        debug_model = tf.keras.models.Model(inputs=model.input[0], outputs=model.get_layer(name=layer).output)
+        model_record(debug_model, prefix=layer)
+
     model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              callbacks=[SaveBestValCallback(), summary_cb])
+              callbacks=[OutputCallback()])
     # callbacks=[save_cb, SaveBestValCallback(), summary_cb])
 
 
@@ -243,6 +256,40 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         if self.best_acc < val_acc:
             self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
             self.best_acc = val_acc
+
+
+def model_record(model, prefix=''):
+    img = cv2.imread('images/public_face_1036_224_train/Ananda Everingham/000001_0.jpg')
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = img - 127.5
+    img = img * 0.0078125
+
+    result = model.predict(np.expand_dims(img, axis=0))[0]
+    result = result.flatten()
+
+    write_line(f'{prefix}:\n{result[:10]}')
+
+
+def write_line(result):
+    with open("record.txt", "a") as myfile:
+        myfile.writelines(f'{result}\n')
+
+
+class OutputCallback(tf.keras.callbacks.Callback):
+
+    def __init__(self):
+        super().__init__()
+
+    def on_epoch_end(self, epoch, logs=None):
+        write_line(f'epoch:{epoch}:')
+        debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
+                        'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
+                        'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28',
+                        'embedding']
+        for layer in debug_layers:
+            debug_model = tf.keras.models.Model(inputs=self.model.input[0],
+                                                outputs=self.model.get_layer(name=layer).output)
+            model_record(debug_model, prefix=layer)
 
 
 if __name__ == '__main__':

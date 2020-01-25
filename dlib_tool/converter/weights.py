@@ -34,9 +34,9 @@ def load_weights_in_conv_layers(model, reversed_conv_layers_info):
 
 def load_weights_in_fc_layer(model, fc_weights):
     # Load weights in the fully connected layer
-    fcw = model.get_layer("embedding_layer").get_weights()
+    fcw = model.get_layer("embedding").get_weights()
     reshaped_fcw = np.reshape(fc_weights, fcw[0].shape)
-    model.get_layer("embedding_layer").set_weights([reshaped_fcw])
+    model.get_layer("embedding").set_weights([reshaped_fcw])
 
 
 def load_weights(model, xml_weights, use_affine=False):
@@ -51,6 +51,6 @@ def load_weights(model, xml_weights, use_affine=False):
         reversed_affine_layers_info = affine_layers_info[::-1]
         load_weights_in_affine_layers(model, reversed_affine_layers_info)
 
-    # fc_weights = get_fc_weights(xdict)
-    # load_weights_in_fc_layer(model, fc_weights)
+    fc_weights = get_fc_weights(xdict)
+    load_weights_in_fc_layer(model, fc_weights)
 
