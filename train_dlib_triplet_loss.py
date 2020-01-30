@@ -18,7 +18,7 @@ tf.random.set_seed(9075)
 SIZE = 224
 IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
-BATCH_SIZE = 64
+BATCH_SIZE = 200
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 500
@@ -239,9 +239,8 @@ def main():
 
     main_input = Input(IMG_SHAPE, name='main_input')
     net = build_dlib_model(main_input, use_bn=True)
-    net = Flatten()(net)
     net = Dense(EMB_SIZE, name='embedding', use_bias=False)(net)
-    net = Lambda(lambda x: tf.math.l2_normalize(x, axis=1))(net)
+    net = Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')(net)
 
     model = Model(inputs=main_input, outputs=net)
     load_weights(model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml', use_bn=True)
@@ -257,7 +256,7 @@ def main():
     write_line('start:')
     debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
                     'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
-                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding']
+                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding','l2_embedding']
     for layer in debug_layers:
         debug_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input,
                                             outputs=model.get_layer(name=layer).output)
@@ -278,8 +277,8 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
     def set_model(self, model):
         self.model = model
-        embedding = model.get_layer(name='embedding')
-        self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding.output)
+        embedding = model.get_layer(name='l2_embedding')
+        self.embedding_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input, outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
         verification_path = os.path.join('tfrecord', VER_NAME)
@@ -293,8 +292,8 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
             h, w, _ = img1.shape
             result1 = self.embedding_model.predict(np.expand_dims(img1, axis=0))
             result2 = self.embedding_model.predict(np.expand_dims(img2, axis=0))
-            result1 = preprocessing.normalize(result1, norm='l2')
-            result2 = preprocessing.normalize(result2, norm='l2')
+            # result1 = preprocessing.normalize(result1, norm='l2')
+            # result2 = preprocessing.normalize(result2, norm='l2')
 
             dist = np.linalg.norm(result1 - result2)
             dist_list.append(dist)
@@ -347,9 +346,9 @@ class OutputCallback(tf.keras.callbacks.Callback):
         debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
                         'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
                         'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28',
-                        'embedding']
+                        'embedding', 'l2_embedding']
         for layer in debug_layers:
-            debug_model = tf.keras.models.Model(inputs=self.model.input[0],
+            debug_model = tf.keras.models.Model(inputs=self.model.get_layer(name='main_input').input,
                                                 outputs=self.model.get_layer(name=layer).output)
             model_record(debug_model, prefix=layer)
 
