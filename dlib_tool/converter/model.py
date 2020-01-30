@@ -18,6 +18,7 @@ from tensorflow.keras import layers as KL
 from tensorflow.keras import models as KM
 from tensorflow.keras import backend as K
 
+
 class ScaleLayer(KL.Layer):
     def __init__(self, **kwargs):
         super(ScaleLayer, self).__init__(**kwargs)
@@ -30,8 +31,8 @@ class ScaleLayer(KL.Layer):
         else:
             ndim = int(input_shape[1])
 
-        self.gamma = self.add_weight(name='gamma', shape=(ndim, ))
-        self.beta = self.add_weight(name='beta', shape=(ndim, ))
+        self.gamma = self.add_weight(name='gamma', shape=(ndim,))
+        self.beta = self.add_weight(name='beta', shape=(ndim,))
 
         super(ScaleLayer, self).build(input_shape)
 
@@ -70,7 +71,7 @@ class ReshapeLayer(KL.Layer):
         s = K.shape(r)
         zeros_h = tf.zeros((s[0], s[1], 1, s[3]), tf.float32)
         r = K.concatenate([r, zeros_h], 2)
-        return r    
+        return r
 
     def compute_output_shape(self, input_shape):
         shape = tf.TensorShape(input_shape).as_list()
@@ -88,6 +89,7 @@ def pad_depth(x, desired_channels):
     new_channels = desired_channels - x.shape.as_list()[-1]
     y = y[:, :, :new_channels]
     return K.concatenate([x, y])
+
 
 def _convLayer(x,
                num_filters,
@@ -150,7 +152,6 @@ def _residual(x, num_filters, filters, conv_layer_counter, use_bn):
 
 def _residualDown(x, num_filters, filters, stage_num, conv_layer_counter,
                   use_bn):
-
     c1, conv_layer_counter = _convDown(x, num_filters, filters,
                                        conv_layer_counter, use_bn)
     c1, conv_layer_counter = _convNoRelu(c1, num_filters, filters,
@@ -187,7 +188,6 @@ def _residualDown(x, num_filters, filters, stage_num, conv_layer_counter,
 
 
 def build_dlib_model(img_input, use_bn=False):
-
     conv_layer_counter = 0
 
     # Head of the network

@@ -84,15 +84,13 @@ def get_label(file_path):
 
 def decode_img(img):
     img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.resize(img, [IMG_SHAPE[0], IMG_SHAPE[1]])
     img = tf.image.random_brightness(img, 0.2)
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
     img = tf.image.convert_image_dtype(img, tf.float32)
-    img = tf.subtract(img, 127.5)
-    img = tf.multiply(img, 0.0078125)
-    img = tf.clip_by_value(img, 0.0, 1.0)
+    img = tf.subtract(img, 0.5)
+    img = tf.multiply(img, 2.0)
     return img
 
 
