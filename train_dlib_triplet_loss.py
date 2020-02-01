@@ -294,13 +294,19 @@ def main():
     train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
     train_main_ds = prepare_for_training(train_main_ds)
 
-    main_input = Input(IMG_SHAPE, name='main_input')
-    net = build_dlib_model(main_input, use_bn=True)
-    net = Dense(EMB_SIZE, name='embedding', use_bias=False)(net)
-    net = Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')(net)
+    # main_input = Input(IMG_SHAPE, name='main_input')
+    # net = build_dlib_model(main_input, use_bn=True)
+    # net = Dense(EMB_SIZE, name='embedding', use_bias=False)(net)
+    # net = Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')(net)
 
-    model = Model(inputs=main_input, outputs=net)
-    load_weights(model, 'dlib_tool/dlib_face_recognition_resnet_model_v1.xml', use_bn=True)
+    base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE,
+                                                  include_top=False, weights='imagenet')
+    model = tf.keras.Sequential([
+        base_model,
+        tf.keras.layers.GlobalAveragePooling2D(),
+        Dense(EMB_SIZE, name='embedding', use_bias=False),
+        Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
+    ])
 
     model.compile(optimizer=tf.keras.optimizers.Adam(0.001),
                   loss=tfa.losses.TripletSemiHardLoss(),
@@ -310,20 +316,20 @@ def main():
     # iter = train_main_ds.make_one_shot_iterator()
     # next = iter.get_next()
 
-    write_line('start:')
-    debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
-                    'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
-                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding',
-                    'l2_embedding']
-    for layer in debug_layers:
-        debug_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input,
-                                            outputs=model.get_layer(name=layer).output)
-        model_record(debug_model, prefix=layer)
+    # write_line('start:')
+    # debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
+    #                 'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
+    #                 'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding',
+    #                 'l2_embedding']
+    # for layer in debug_layers:
+    #     debug_model = tf.keras.models.Model(inputs=model.input,
+    #                                         outputs=model.get_layer(name=layer).output)
+    #     model_record(debug_model, prefix=layer)
 
     model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              callbacks=[OutputCallback(), SaveBestValCallback()])
+              callbacks=[SaveBestValCallback()])
 
 
 class SaveBestValCallback(tf.keras.callbacks.Callback):
@@ -336,7 +342,7 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
     def set_model(self, model):
         self.model = model
         embedding = model.get_layer(name='l2_embedding')
-        self.embedding_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input,
+        self.embedding_model = tf.keras.models.Model(inputs=model.input,
                                                      outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
@@ -405,7 +411,7 @@ class OutputCallback(tf.keras.callbacks.Callback):
                         'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28',
                         'embedding', 'l2_embedding']
         for layer in debug_layers:
-            debug_model = tf.keras.models.Model(inputs=self.model.get_layer(name='main_input').input,
+            debug_model = tf.keras.models.Model(inputs=self.model.input,
                                                 outputs=self.model.get_layer(name=layer).output)
             model_record(debug_model, prefix=layer)
 
