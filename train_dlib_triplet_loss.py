@@ -15,20 +15,23 @@ from dlib_tool.converter.weights import load_weights
 import tensorflow_addons as tfa
 
 tf.random.set_seed(9075)
-SIZE = 224
+SIZE = 112
 IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
-BATCH_SIZE = 200
+BATCH_SIZE = 128
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
-EPOCHS = 500
-TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
-# TRAIN_DATA_PATH = 'images/glint_2w/'
-VER_NAME = 'verification.tfrecord'
-# VER_NAME = 'astra_test_align.tfrecord'
+EPOCHS = 10000
+# TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
+TRAIN_DATA_PATH = 'images/glint_2w/'
+# VER_NAME = 'verification.tfrecord'
+VER_NAME = 'astra_test_align.tfrecord'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
+
+MIN_IMAGES_PER_PERSON = 4
+PAIR_PER_PERSON = MIN_IMAGES_PER_PERSON - 1
 
 PATIENCE = 100
 EMB_SIZE = 128
@@ -65,7 +68,7 @@ class ImageClass:
 
 class CenterLossLayer(tf.keras.layers.Layer):
     def __init__(self, nrof_classes, alpha=0.5, **kwargs):
-        super().__init__(**kwargs)
+        super(CenterLossLayer, self).__init__(**kwargs)
         self.alpha = alpha
         self.centers = None
         self.nrof_classes = nrof_classes
@@ -146,8 +149,8 @@ def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
         else:
             ds = ds.cache()
 
-    ds = ds.shuffle(buffer_size=shuffle_buffer_size)
-    ds = ds.repeat()
+    # ds = ds.shuffle(buffer_size=shuffle_buffer_size)
+    # ds = ds.repeat()
     ds = ds.batch(BATCH_SIZE)
     ds = ds.prefetch(buffer_size=AUTOTUNE)
 
@@ -156,23 +159,6 @@ def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
 
 def zero_loss(y_true, y_pred):  # y_true is dummy
     return 0.5 * tf.reduce_sum(y_pred, axis=0)
-
-
-def sample_buffer(dataset, pair_per_person):
-    buffer_sample = []
-    np.random.shuffle(dataset)
-
-    for idx, ic in enumerate(dataset):
-        selection = ic.image_paths.copy()
-        for _ in range(pair_per_person):
-            a_path = random.choice(selection)
-            selection.remove(a_path)
-            p_path = random.choice(selection)
-            n_path = random.choice(dataset[idx - 1].image_paths)
-            buffer_sample.append(TripletPair(a_path, p_path, n_path))
-
-    np.random.shuffle(buffer_sample)
-    return buffer_sample
 
 
 def study_buffer(buffer_list, size):
@@ -223,11 +209,82 @@ def hard_batch(model, buffer_list, study_size, batch_size):
     return [y for x in mix_sample for y in x]  # flatten
 
 
+def get_dataset(path):
+    dataset = []
+    path_exp = os.path.expanduser(path)
+    classes = [path for path in os.listdir(path_exp) \
+               if os.path.isdir(os.path.join(path_exp, path))]
+    classes.sort()
+    nrof_classes = len(classes)
+    for i in range(nrof_classes):
+        class_name = classes[i]
+        facedir = os.path.join(path_exp, class_name)
+        image_paths = get_image_paths(facedir)
+        dataset.append(ImageClass(class_name, image_paths))
+
+    dataset = [data for data in dataset if MIN_IMAGES_PER_PERSON <= len(data)]
+    return dataset
+
+
+def triplet_gen():
+    dataset = get_dataset(TRAIN_DATA_PATH)
+    # num_of_class_per_step = BATCH_SIZE // PAIR_PER_PERSON
+    # steps_per_epoch = len(dataset) // num_of_class_per_step
+
+    # image_input = Input(1, name='pre_process', dtype=tf.string)
+    # image_output = Lambda(lambda x: tf.map_fn(decode_img, x, dtype=tf.float32))(image_input)
+    #
+    # image_model = Model(inputs=image_input, outputs=image_output)
+
+    while True:
+        np.random.shuffle(dataset)
+        for ic_idx in range(0, len(dataset)):
+            ic = dataset[ic_idx]
+            path_list = ic.image_paths
+            np.random.shuffle(path_list)
+            for path_idx in range(0, MIN_IMAGES_PER_PERSON):
+                img_path = path_list[path_idx]
+                yield img_path
+                # yield image_model.predict(np.array([[img_path]]))
+
+
+def sample_buffer(dataset, pair_per_person):
+    buffer_sample = []
+    np.random.shuffle(dataset)
+
+    for idx, ic in enumerate(dataset):
+        selection = ic.image_paths.copy()
+        for _ in range(pair_per_person):
+            a_path = random.choice(selection)
+            selection.remove(a_path)
+            p_path = random.choice(selection)
+            n_path = random.choice(dataset[idx - 1].image_paths)
+            buffer_sample.append(TripletPair(a_path, p_path, n_path))
+
+    np.random.shuffle(buffer_sample)
+    return buffer_sample
+
+
 def main():
     global CLASS_NAMES
 
+    # image_input = Input(1, name='pre_process', dtype=tf.string)
+    # image_output = Lambda(lambda x: tf.map_fn(decode_img, x, dtype=tf.float32))(image_input)
+    #
+    # image_model = Model(inputs=image_input, outputs=image_output)
+    # the_in = np.array([['images/glint_tiny/0_2924003/0.jpg'],
+    #                    ['images/glint_tiny/0_2924003/0.jpg'],
+    #                    ['images/glint_tiny/0_2924003/0.jpg']])
+    # result = image_model.predict(the_in)
+    #
+    # exit(0)
+
+    train_list_ds = tf.data.Dataset.from_generator(
+        triplet_gen,
+        tf.string,
+        (tf.TensorShape(())))
+
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
-    train_list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))
     CLASS_NAMES = np.array([item.name for item in train_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
     train_image_count = len(list(train_data_dir.glob('*/*.jpg')))
     steps_per_epoch = np.ceil(train_image_count / BATCH_SIZE)
@@ -256,7 +313,8 @@ def main():
     write_line('start:')
     debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
                     'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
-                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding','l2_embedding']
+                    'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding',
+                    'l2_embedding']
     for layer in debug_layers:
         debug_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input,
                                             outputs=model.get_layer(name=layer).output)
@@ -265,7 +323,7 @@ def main():
     model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              callbacks=[OutputCallback()])
+              callbacks=[OutputCallback(), SaveBestValCallback()])
 
 
 class SaveBestValCallback(tf.keras.callbacks.Callback):
@@ -278,7 +336,8 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
     def set_model(self, model):
         self.model = model
         embedding = model.get_layer(name='l2_embedding')
-        self.embedding_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input, outputs=embedding.output)
+        self.embedding_model = tf.keras.models.Model(inputs=model.get_layer(name='main_input').input,
+                                                     outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
         verification_path = os.path.join('tfrecord', VER_NAME)
@@ -292,8 +351,6 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
             h, w, _ = img1.shape
             result1 = self.embedding_model.predict(np.expand_dims(img1, axis=0))
             result2 = self.embedding_model.predict(np.expand_dims(img2, axis=0))
-            # result1 = preprocessing.normalize(result1, norm='l2')
-            # result2 = preprocessing.normalize(result2, norm='l2')
 
             dist = np.linalg.norm(result1 - result2)
             dist_list.append(dist)
