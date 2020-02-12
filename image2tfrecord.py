@@ -16,15 +16,17 @@ KEY_IMAGE_FIRST = 'image_first'
 KEY_IMAGE_SECOND = 'image_second'
 KEY_FIRST_NAME = 'first_name'
 KEY_SECOND_NAME = 'second_name'
-IMAGE_SIZE = (224, 224)
+
+TARGET_FOLDER = 'glint_tiny'
+IMAGE_SIZE = (112, 112)
 SAME_PER_PERSON = 20
 
 
 def gen_train_tfrecord():
-    output_path = os.path.join('tfrecord', 'train.tfrecord')
-    writer = tf.python_io.TFRecordWriter(output_path)
+    output_path = os.path.join('tfrecord', f'{TARGET_FOLDER}_train.tfrecord')
+    writer = tf.io.TFRecordWriter(output_path)
 
-    directory = os.path.join('images', 'image_db')
+    directory = os.path.join('images', TARGET_FOLDER)
     faces = [
         o for o in os.listdir(directory) if os.path.isdir(os.path.join(directory, o))
     ]
@@ -46,7 +48,7 @@ def show_bin_image():
 
 def show_train_tfrecord_image():
     input_path = os.path.join('tfrecord', 'train.tfrecord')
-    record_iterator = tf.python_io.tf_record_iterator(path=input_path)
+    record_iterator = tf.compat.v1.io.tf_record_iterator(path=input_path)
     for record in record_iterator:
         example = tf.train.Example()
         example.ParseFromString(record)
@@ -84,9 +86,9 @@ def write_ver_record(writer, faces):
         same_pool = [path for (key, paths) in faces.items() if key == k for path in paths]
         diff_pool = [path for (key, paths) in faces.items() if key != k for path in paths]
 
-        same_pairs = np.random.choice(same_pool, size=(len(same_pool)//2, 2), replace=False)
-        diff_face = np.random.choice(diff_pool, size=len(same_pool), replace=False)
-        diff_pairs = np.vstack((same_pool, list(diff_face))).transpose()
+        same_pairs = np.random.choice(same_pool, size=(len(same_pool) // 2, 2), replace=False)
+        diff_face = np.random.choice(diff_pool, size=len(same_pool) // 2, replace=False)
+        diff_pairs = np.vstack((same_pool[:len(same_pool) // 2], list(diff_face))).transpose()
 
         write_pair(same_pairs, writer, is_same=1)
         write_pair(diff_pairs, writer, is_same=0)
@@ -115,10 +117,10 @@ def write_pair(same_pairs, writer, is_same):
 
 
 def gen_verification_tfrecord():
-    output_path = os.path.join('tfrecord', 'verification.tfrecord')
-    writer = tf.python_io.TFRecordWriter(output_path)
+    output_path = os.path.join('tfrecord', f'{TARGET_FOLDER}_verification.tfrecord')
+    writer = tf.io.TFRecordWriter(output_path)
 
-    directory = os.path.join('images', 'astra_door_align')
+    directory = os.path.join('images', TARGET_FOLDER)
     faces = [
         o for o in os.listdir(directory) if os.path.isdir(os.path.join(directory, o))
     ]
@@ -130,6 +132,6 @@ def gen_verification_tfrecord():
 
 
 if __name__ == '__main__':
-    gen_train_tfrecord()
+    # gen_train_tfrecord()
     # show_train_tfrecord_image()
-    # gen_verification_tfrecord()
+    gen_verification_tfrecord()
