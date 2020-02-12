@@ -13,7 +13,7 @@ from dlib_tool.converter.model import build_dlib_model
 from dlib_tool.converter.weights import load_weights
 
 tf.random.set_seed(9075)
-SIZE = 150
+SIZE = 224
 IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
 BATCH_SIZE = 64
@@ -22,8 +22,7 @@ CLASS_NAMES = np.array([])
 EPOCHS = 10
 TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
 # TRAIN_DATA_PATH = 'images/glint_2w/'
-VER_NAME = 'verification.tfrecord'
-# VER_NAME = 'astra_test_align.tfrecord'
+VER_RECORD = 'verification.tfrecord'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
@@ -34,8 +33,8 @@ CENTER_LOSS_LAMBDA = 0.01
 
 
 class DummyLayer(tf.keras.layers.Layer):
-    def __init__(self):
-        super(DummyLayer, self).__init__()
+    def __init__(self, **kwargs):
+        super(DummyLayer, self).__init__(**kwargs)
 
     def call(self, inputs, **kwargs):
         return inputs
@@ -106,15 +105,13 @@ def get_label(file_path):
 
 def decode_img(img):
     img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.resize(img, [IMG_SHAPE[0], IMG_SHAPE[1]])
     img = tf.image.random_brightness(img, 0.2)
     img = tf.image.random_saturation(img, 0.6, 1.6)
     img = tf.image.random_contrast(img, 0.6, 1.4)
     img = tf.image.random_flip_left_right(img)
     img = tf.image.convert_image_dtype(img, tf.float32)
-    img = tf.subtract(img, 127.5)
-    img = tf.multiply(img, 0.0078125)
-    img = tf.clip_by_value(img, 0.0, 1.0)
+    img = tf.subtract(img, 0.5)
+    img = tf.multiply(img, 2.0)
     return img
 
 
@@ -167,12 +164,12 @@ def main():
     main_input = Input(IMG_SHAPE)
     side_input = Input(len(CLASS_NAMES))
 
-    x = build_dlib_model(main_input, use_bn=True)
-    # x = BatchNormalization()(x)
+    x = DummyLayer(name='dummy_input')(main_input)
+    x = build_dlib_model(x, use_bn=True)
     x = Flatten()(x)
     x = Dense(EMB_SIZE, name='embedding', use_bias=False)(x)
     x = Activation(tf.nn.relu6)(x)
-    main_loss = Dense(len(CLASS_NAMES), name='main', activation=tf.nn.softmax)(x)
+    main_loss = Dense(len(CLASS_NAMES), name='main', use_bias=False, activation=tf.nn.softmax)(x)
     side_loss = CenterLossLayer(len(CLASS_NAMES), name='center')([x, side_input])
 
     model = Model(inputs=[main_input, side_input], outputs=[main_loss, side_loss])
@@ -182,19 +179,18 @@ def main():
                   loss=['sparse_categorical_crossentropy', zero_loss],
                   loss_weights=[1, CENTER_LOSS_LAMBDA],
                   metrics={'main': 'sparse_categorical_accuracy'})
-
     model.summary()
 
     save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_CKPT, monitor='val_loss', verbose=1,
                                                  save_weights_only=False, mode='auto')
     summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
 
-    # iter = train_main_ds.make_one_shot_iterator()
-    # next = iter.get_next()
+    iter = train_main_ds.make_one_shot_iterator()
+    next = iter.get_next()
     # result = model.predict([next[0][0], next[0][1], next[1][0], next[1][1])
 
     write_line('start:')
-    debug_layers = ['max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
+    debug_layers = ['dummy_input', 'max_pooling2d', 'activation_2', 'activation_4', 'activation_6', 'activation_8',
                     'activation_10', 'activation_12', 'activation_14', 'activation_16', 'activation_18',
                     'activation_20', 'activation_22', 'activation_24', 'activation_26', 'activation_28', 'embedding']
     for layer in debug_layers:
@@ -221,7 +217,7 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         self.embedding_model = tf.keras.models.Model(inputs=model.input[0], outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
-        verification_path = os.path.join('tfrecord', VER_NAME)
+        verification_path = os.path.join('tfrecord', VER_RECORD)
         ver_dataset = utils.get_ver_data(verification_path, SHAPE)
 
         first_list, second_list, true_same = ver_dataset[0], ver_dataset[1], np.array(ver_dataset[2])
