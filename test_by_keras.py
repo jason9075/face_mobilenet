@@ -5,13 +5,15 @@ from sklearn import preprocessing
 
 import utils
 
-SHAPE = (224, 224)
-IMG_SHAPE = (224, 224, 3)
+SHAPE = (112, 112)
+IMG_SHAPE = (112, 112, 3)
 EMB_SIZE = 128
 CLASS_NUM = 1036
 PLOT_ROC = True
 LFW_PATH = 'tfrecord/lfw.bin'
-RESTORE_BY_WEIGHT = True
+RESTORE_BY_WEIGHT = False
+VER_NAME = 'glint_tiny_verification.tfrecord'
+VER_TYPE = 'cosine'
 
 
 def main():
@@ -20,24 +22,31 @@ def main():
         model.save_weights('model_out/keras_best/weight.h5')
         model = restore_weight('model_out/keras_best/weight.h5')
     else:
-        model = tf.keras.models.load_model('model_out/keras_embedding')
+        model = tf.keras.models.load_model('model_out/keras_embedding_acc901874')
 
     def embedding_fn(img1, img2):
         h, w, _ = img1.shape
         result1 = model.predict(np.expand_dims(img1, axis=0))
         result2 = model.predict(np.expand_dims(img2, axis=0))
-        result1 = preprocessing.normalize(result1, norm='l2')
-        result2 = preprocessing.normalize(result2, norm='l2')
+        # result1 = preprocessing.normalize(result1, norm='l2')
+        # result2 = preprocessing.normalize(result2, norm='l2')
 
         return result1, result2
 
     # gen_model()
-    utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC, verbose=True)
-    # utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC)
+    utils.test_tfrecord(VER_NAME,
+                        embedding_fn,
+                        SHAPE,
+                        is_plot=PLOT_ROC,
+                        verbose=True,
+                        ver_type=VER_TYPE)
+    # utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC, ver_type=VER_TYPE)
 
 
 def restore_weight(path):
-    base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE,
+                                                  include_top=False,
+                                                  weights='imagenet')
 
     model = tf.keras.Sequential([
         base_model,

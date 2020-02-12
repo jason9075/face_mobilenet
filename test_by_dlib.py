@@ -5,6 +5,8 @@ import utils
 SHAPE = (224, 224)
 PLOT_ROC = True
 LFW_PATH = 'tfrecord/lfw.bin'
+VER_NAME = 'glint_tiny_verification.tfrecord'
+VER_TYPE = 'euclidean'
 
 
 def main():
@@ -22,8 +24,8 @@ def main():
         return vector_pair
 
     # gen_model()
-    utils.test_tfrecord('verification.tfrecord', embedding_fn, SHAPE, is_plot=PLOT_ROC)
-    utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC)
+    utils.test_tfrecord(VER_NAME, embedding_fn, SHAPE, is_plot=PLOT_ROC, ver_type=VER_TYPE)
+    # utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC, ver_type=VER_TYPE)
 
 
 if __name__ == '__main__':

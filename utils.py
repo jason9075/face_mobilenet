@@ -43,7 +43,6 @@ def pre_process_image(img, shape):
 
 
 def get_ver_data(record_path, shape, preprocessing=True):
-    # record_iterator = tf.python_io.tf_record_iterator(path=record_path)
     record_iterator = tf.compat.v1.io.tf_record_iterator(path=record_path)
     first_list = []
     second_list = []
@@ -71,7 +70,7 @@ def get_ver_data(record_path, shape, preprocessing=True):
     return [first_list, second_list, is_same_list]
 
 
-def ver_tfrecord(data_set, embedding_fn, verbose=False):
+def ver_tfrecord(data_set, embedding_fn, verbose=False, ver_type='euclidean'):
     first_list, second_list, true_same = data_set[0], data_set[1], np.array(data_set[2])
     total = len(true_same)
     same = int(np.sum(true_same))
@@ -79,13 +78,20 @@ def ver_tfrecord(data_set, embedding_fn, verbose=False):
     if verbose:
         print('samples: %d, same: %d, diff: %d' % (total, same, diff))
 
-    dist_list = []
+    val_list = []
     start = timeit.default_timer()
     for idx, (first, second) in enumerate(zip(first_list, second_list)):
         result1, result2 = embedding_fn(first, second)
 
-        dist = np.linalg.norm(result1 - result2)
-        dist_list.append(dist)
+        if ver_type == 'euclidean':
+            val = np.linalg.norm(result1 - result2)
+            val_list.append(val)
+        elif ver_type == 'cosine':
+            val = np.dot(result1, np.transpose(result2)) / (np.sqrt(np.dot(result1, np.transpose(result1))) * np.sqrt(
+                np.dot(result2, np.transpose(result2))))
+            val_list.append(val[0][0])
+        else:
+            raise RuntimeError(f'ver_type: {ver_type} is not exist.')
         if (idx % 1000 == 0) & verbose:
             print('complete %d pairs' % idx)
     if verbose:
@@ -99,7 +105,12 @@ def ver_tfrecord(data_set, embedding_fn, verbose=False):
     fns = []
     tns = []
     for threshold in thresholds:
-        pred_same = np.less(dist_list, threshold)
+        if ver_type == 'euclidean':
+            pred_same = np.less(val_list, threshold)
+        elif ver_type == 'cosine':
+            pred_same = np.greater(val_list, threshold)
+        else:
+            raise RuntimeError(f'ver_type: {ver_type} is not exist.')
         tp = np.sum(np.logical_and(pred_same, true_same))
         tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(true_same)))
         fp = diff - tn
@@ -192,11 +203,13 @@ def load_bin(bin_path, input_size):
     return first_imgs, second_imgs, np.repeat(issame_list, 2)
 
 
-def test_tfrecord(tfrecord, embedding_fn, shape, is_plot=False, verbose=False):
+def test_tfrecord(tfrecord, embedding_fn, shape, is_plot=False, verbose=False, ver_type='euclidean'):
     verification_path = os.path.join('tfrecord', tfrecord)
     ver_dataset = get_ver_data(verification_path, shape)
 
-    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn, verbose=verbose)
+    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn,
+                                                              verbose=verbose,
+                                                              ver_type=ver_type)
     print('test accuracy is: %.3f, thr: %.2f, prec: %.3f, rec: %.3f.' %
           (val_acc, val_thr, float(tp) / (tp + fp), float(tp) / (tp + fn)))
 
@@ -204,10 +217,10 @@ def test_tfrecord(tfrecord, embedding_fn, shape, is_plot=False, verbose=False):
         plot_roc(fpr, tpr)
 
 
-def test_lfw(path, embedding_fn, shape, is_plot=False):
+def test_lfw(path, embedding_fn, shape, is_plot=False, ver_type='euclidean'):
     ver_dataset = load_bin(path, shape)
 
-    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn)
+    val_acc, val_thr, tp, fp, fn, tn, tpr, fpr = ver_tfrecord(ver_dataset, embedding_fn, ver_type=ver_type)
     print('test accuracy is: %.3f, thr: %.2f, prec: %.3f, rec: %.3f.' %
           (val_acc, val_thr, float(tp) / (tp + fp), float(tp) / (tp + fn)))
 
