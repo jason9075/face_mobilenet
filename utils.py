@@ -47,6 +47,8 @@ def get_ver_data(record_path, shape, preprocessing=True):
     first_list = []
     second_list = []
     is_same_list = []
+    first_name_list = []
+    second_name_list = []
     for record in record_iterator:
         example = tf.train.Example()
         example.ParseFromString(record)
@@ -56,6 +58,8 @@ def get_ver_data(record_path, shape, preprocessing=True):
         if preprocessing:
             img_first = pre_process_image(img_first, shape)
         first_list.append(img_first)
+        first_name = example.features.feature['first_name'].bytes_list.value[0]
+        first_name_list.append(first_name)
 
         image_string = example.features.feature['image_second'].bytes_list.value[0]
         img = np.fromstring(image_string, dtype=np.uint8)
@@ -63,11 +67,13 @@ def get_ver_data(record_path, shape, preprocessing=True):
         if preprocessing:
             img_second = pre_process_image(img_second, shape)
         second_list.append(img_second)
+        second_name = example.features.feature['second_name'].bytes_list.value[0]
+        second_name_list.append(second_name)
 
         is_same = example.features.feature['is_same'].int64_list.value[0]
         is_same_list.append(is_same)
 
-    return [first_list, second_list, is_same_list]
+    return [first_list, second_list, is_same_list, first_name_list, second_name_list]
 
 
 def ver_tfrecord(data_set, embedding_fn, verbose=False, ver_type='euclidean'):
@@ -89,7 +95,7 @@ def ver_tfrecord(data_set, embedding_fn, verbose=False, ver_type='euclidean'):
         elif ver_type == 'cosine':
             val = np.dot(result1, np.transpose(result2)) / (np.sqrt(np.dot(result1, np.transpose(result1))) * np.sqrt(
                 np.dot(result2, np.transpose(result2))))
-            val_list.append(val[0][0])
+            val_list.append((val[0][0] + 1) / 2)
         else:
             raise RuntimeError(f'ver_type: {ver_type} is not exist.')
         if (idx % 1000 == 0) & verbose:
@@ -97,7 +103,12 @@ def ver_tfrecord(data_set, embedding_fn, verbose=False, ver_type='euclidean'):
     if verbose:
         print('cost_times: %.2f sec' % (timeit.default_timer() - start))
 
-    thresholds = np.arange(0.1, 3.0, 0.05)
+    if ver_type == 'euclidean':
+        thresholds = np.arange(0.1, 3.0, 0.05)
+    elif ver_type == 'cosine':
+        thresholds = np.arange(0.05, 1.0, 0.05)
+    else:
+        raise RuntimeError(f'ver_type: {ver_type} is not exist.')
 
     accs = []
     tps = []

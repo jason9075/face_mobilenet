@@ -18,8 +18,9 @@ AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 10000
 TRAIN_DATA_PATH = 'images/train_image/'
-VER_RECORD = 'public_face_1036_112_train_align.tfrecord'
+VER_RECORD = 'public_face_1036_112_align_verification.tfrecord'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
+OUTPUT_BEST_EMB_MODEL_FOLDER = 'model_out/keras_best_embedding'
 
 MIN_IMAGES_PER_PERSON = 4
 EMB_SIZE = 128
@@ -133,7 +134,7 @@ def main():
     train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
     train_main_ds = prepare_for_training(train_main_ds)
 
-    base_model = efn.EfficientNetB3(input_shape=IMG_SHAPE,
+    base_model = efn.EfficientNetB2(input_shape=IMG_SHAPE,
                                     include_top=False, weights='imagenet')
 
     model = tf.keras.Sequential([
@@ -185,9 +186,10 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
             sim = np.dot(result1, np.transpose(result2)) / (np.sqrt(np.dot(result1, np.transpose(result1))) * np.sqrt(
                 np.dot(result2, np.transpose(result2))))
+            sim = (sim + 1) / 2
             sim_list.append(sim[0][0])
 
-        thresholds = np.arange(0.1, 1.0, 0.05)
+        thresholds = np.arange(0.05, 1.0, 0.05)
 
         accs = []
         for threshold in thresholds:
@@ -203,8 +205,9 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
         print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
         if self.best_acc < val_acc:
-            self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
+            self.embedding_model.save(OUTPUT_BEST_EMB_MODEL_FOLDER)
             self.best_acc = val_acc
+        self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
 
 
 if __name__ == '__main__':

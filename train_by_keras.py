@@ -14,15 +14,12 @@ BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 CLASS_NAMES = np.array([])
 EPOCHS = 30000
-TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
-# TRAIN_DATA_PATH = 'images/star224/'
-TEST_DATA_PATH = 'images/public_face_1036_224_valid/'
-# TEST_DATA_PATH = 'images/star224/'
-OUTPUT_MODEL_FOLDER = 'model_out/keras'
+TRAIN_DATA_PATH = 'images/public_face_1036_224/'
+# TRAIN_DATA_PATH = 'images/glint_tiny/'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
-OUTPUT_MODEL_FOLDER_CKPT = 'model_out/keras_ckpt'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
-PATIENCE = 100
+OUTPUT_BEST_EMB_MODEL_FOLDER = 'model_out/keras_best_embedding'
+VER_RECORD = 'public_face_1036_112_align_verification.tfrecord'
 EMB_SIZE = 128
 
 
@@ -35,32 +32,33 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
     def set_model(self, model):
         self.model = model
-        embedding = model.layers[4].output
-        self.embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding)
+        embedding = model.get_layer(name='l2_embedding')
+        self.embedding_model = tf.keras.models.Model(inputs=model.input, outputs=embedding.output)
 
     def on_epoch_end(self, epoch, logs=None):
-        verification_path = os.path.join('tfrecord', 'verification.tfrecord')
+        verification_path = os.path.join('tfrecord', VER_RECORD)
         ver_dataset = utils.get_ver_data(verification_path, SHAPE)
 
         first_list, second_list, true_same = ver_dataset[0], ver_dataset[1], np.array(ver_dataset[2])
         total = len(true_same)
 
-        dist_list = []
+        sim_list = []
         for idx, (img1, img2) in enumerate(zip(first_list, second_list)):
             h, w, _ = img1.shape
             result1 = self.embedding_model.predict(np.expand_dims(img1, axis=0))
             result2 = self.embedding_model.predict(np.expand_dims(img2, axis=0))
-            result1 = preprocessing.normalize(result1, norm='l2')
-            result2 = preprocessing.normalize(result2, norm='l2')
+            # result1 = preprocessing.normalize(result1, norm='l2')
+            # result2 = preprocessing.normalize(result2, norm='l2')
 
-            dist = np.linalg.norm(result1 - result2)
-            dist_list.append(dist)
+            sim = np.dot(result1, np.transpose(result2)) / (np.sqrt(np.dot(result1, np.transpose(result1))) * np.sqrt(
+                np.dot(result2, np.transpose(result2))))
+            sim_list.append(sim[0][0])
 
         thresholds = np.arange(0.1, 3.0, 0.05)
 
         accs = []
         for threshold in thresholds:
-            pred_same = np.less(dist_list, threshold)
+            pred_same = np.less(sim_list, threshold)
             tp = np.sum(np.logical_and(pred_same, true_same))
             tn = np.sum(np.logical_and(np.logical_not(pred_same), np.logical_not(true_same)))
             acc = float(tp + tn) / total
@@ -72,8 +70,10 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
         print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
         if self.best_acc < val_acc:
-            self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
+            self.embedding_model.save(OUTPUT_BEST_EMB_MODEL_FOLDER)
             self.best_acc = val_acc
+            return
+        self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
 
 
 def get_label(file_path):
@@ -122,18 +122,13 @@ def main():
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
     list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))
     CLASS_NAMES = np.array([item.name for item in train_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
-    test_data_dir = pathlib.Path(TEST_DATA_PATH)
-    test_list_ds = tf.data.Dataset.list_files(str(test_data_dir / '*/*.jpg'))
     train_image_count = len(list(train_data_dir.glob('*/*.jpg')))
-    test_image_count = len(list(test_data_dir.glob('*/*.jpg')))
     steps_per_epoch = np.ceil(train_image_count / BATCH_SIZE)
-    val_steps = np.ceil(test_image_count / BATCH_SIZE)
 
     print('total labels: %d' % len(CLASS_NAMES))
 
     train_labeled_ds = list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
     train_ds = prepare_for_training(train_labeled_ds)
-    test_labeled_ds = test_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
 
     base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     base_model.summary()
@@ -141,9 +136,8 @@ def main():
     model = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(EMB_SIZE),
+        tf.keras.layers.Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding'),
         tf.keras.layers.Dense(len(CLASS_NAMES), activation='softmax')
     ])
 
@@ -153,54 +147,12 @@ def main():
                   loss='sparse_categorical_crossentropy',
                   metrics=['sparse_categorical_accuracy'])
 
-    save_cb = tf.keras.callbacks.ModelCheckpoint(OUTPUT_MODEL_FOLDER_CKPT, monitor='val_loss', verbose=1,
-                                                 save_weights_only=False, mode='auto')
-
     summary_cb = tf.keras.callbacks.TensorBoard(OUTPUT_MODEL_LOGS_FOLDER, histogram_freq=1)
 
     model.fit(train_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              validation_data=test_labeled_ds.batch(BATCH_SIZE),
-              validation_steps=val_steps,
-              callbacks=[SaveBestValCallback(), save_cb, summary_cb])
-
-    loss, accuracy = model.evaluate(test_labeled_ds.batch(BATCH_SIZE), verbose=2)
-    print("Loss :", loss)
-    print("Accuracy :", accuracy)
-
-
-class EarlyStoppingAtMinLoss(tf.keras.callbacks.Callback):
-    def __init__(self):
-        super(EarlyStoppingAtMinLoss, self).__init__()
-        self.patience = PATIENCE
-        self.best_weights = None
-        self.stopped_epoch = None
-        self.wait = 0
-        self.stopped_epoch = 0
-        self.best = np.Inf
-
-    def on_epoch_end(self, epoch, logs=None):
-        current = logs.get('val_loss')
-        if current is None:
-            print('val_loss is None.')
-            return
-        if np.less(current, self.best):
-            self.best = current
-            self.wait = 0
-            # Record the best weights if current results is better (less).
-            self.best_weights = self.model.get_weights()
-        else:
-            self.wait += 1
-            if self.patience < self.wait:
-                self.stopped_epoch = epoch
-                self.model.stop_training = True
-                self.model.set_weights(self.best_weights)
-
-    def on_train_end(self, logs=None):
-        if 0 < self.stopped_epoch:
-            print('Restoring model weights from the end of the best epoch. val_loss: %03f:' % self.best)
-            print('Epoch %05d: early stopping' % (self.stopped_epoch + 1))
+              callbacks=[SaveBestValCallback()])
 
 
 if __name__ == '__main__':
