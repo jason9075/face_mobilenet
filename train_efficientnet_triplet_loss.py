@@ -25,6 +25,8 @@ OUTPUT_BEST_EMB_MODEL_FOLDER = 'model_out/keras_best_embedding'
 MIN_IMAGES_PER_PERSON = 4
 EMB_SIZE = 128
 
+RESTORE_LAST_TRAIN = False
+
 
 class ImageClass:
     def __init__(self, name, image_paths):
@@ -134,15 +136,29 @@ def main():
     train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
     train_main_ds = prepare_for_training(train_main_ds)
 
-    base_model = efn.EfficientNetB2(input_shape=IMG_SHAPE,
-                                    include_top=False, weights='imagenet')
+    if RESTORE_LAST_TRAIN:
+        model = tf.keras.models.load_model(OUTPUT_EMB_MODEL_FOLDER)
+        model.save_weights('model_out/tmp.h5')
+        base_model = efn.EfficientNetB3(input_shape=IMG_SHAPE,
+                                        include_top=False, weights='imagenet')
 
-    model = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        Dense(EMB_SIZE, name='embedding', use_bias=False),
-        Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
-    ])
+        model = tf.keras.Sequential([
+            base_model,
+            tf.keras.layers.GlobalAveragePooling2D(),
+            Dense(EMB_SIZE, name='embedding', use_bias=False),
+            Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
+        ])
+        model.load_weights('model_out/tmp.h5', by_name=True)
+    else:
+        base_model = efn.EfficientNetB2(input_shape=IMG_SHAPE,
+                                        include_top=False, weights='imagenet')
+
+        model = tf.keras.Sequential([
+            base_model,
+            tf.keras.layers.GlobalAveragePooling2D(),
+            Dense(EMB_SIZE, name='embedding', use_bias=False),
+            Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
+        ])
 
     model.compile(optimizer=tf.keras.optimizers.Adam(0.001),
                   loss=tfa.losses.TripletSemiHardLoss(),
@@ -203,11 +219,12 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         val_acc = accs[best_index]
         val_thr = thresholds[best_index]
 
-        print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
         if self.best_acc < val_acc:
             self.embedding_model.save(OUTPUT_BEST_EMB_MODEL_FOLDER)
             self.best_acc = val_acc
         self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
+
+        print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
 
 
 if __name__ == '__main__':
