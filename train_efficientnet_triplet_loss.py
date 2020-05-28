@@ -5,7 +5,7 @@ import efficientnet.tfkeras as efn
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
-from tensorflow_core.python.keras.layers import Dense, Lambda
+from tensorflow.keras.layers import Lambda, Dense, GlobalAveragePooling2D
 
 import utils
 
@@ -144,7 +144,7 @@ def main():
 
         model = tf.keras.Sequential([
             base_model,
-            tf.keras.layers.GlobalAveragePooling2D(),
+            GlobalAveragePooling2D(),
             Dense(EMB_SIZE, name='embedding', use_bias=False),
             Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
         ])
@@ -152,10 +152,11 @@ def main():
     else:
         base_model = efn.EfficientNetB2(input_shape=IMG_SHAPE,
                                         include_top=False, weights='imagenet')
+        # base_model = tf.keras.applications.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
 
         model = tf.keras.Sequential([
             base_model,
-            tf.keras.layers.GlobalAveragePooling2D(),
+            GlobalAveragePooling2D(),
             Dense(EMB_SIZE, name='embedding', use_bias=False),
             Lambda(lambda x: tf.math.l2_normalize(x, axis=1), name='l2_embedding')
         ])
@@ -220,9 +221,9 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
         val_thr = thresholds[best_index]
 
         if self.best_acc < val_acc:
-            self.embedding_model.save(OUTPUT_BEST_EMB_MODEL_FOLDER)
+            self.model.save(OUTPUT_BEST_EMB_MODEL_FOLDER, include_optimizer=False)
             self.best_acc = val_acc
-        self.embedding_model.save(OUTPUT_EMB_MODEL_FOLDER)
+        self.model.save(OUTPUT_EMB_MODEL_FOLDER, include_optimizer=False)
 
         print('\n val_acc: %f, val_thr: %f, current best: %f ' % (val_acc, val_thr, self.best_acc))
 
