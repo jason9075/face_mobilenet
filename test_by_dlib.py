@@ -2,10 +2,10 @@ import face_recognition as fr
 import numpy as np
 import utils
 
-SHAPE = (224, 224)
+SHAPE = (112, 112)
 PLOT_ROC = True
 LFW_PATH = 'tfrecord/lfw.bin'
-VER_NAME = 'glint_tiny_verification.tfrecord'
+VER_NAME = 'public_face_1036_112_align_verification.tfrecord'
 VER_TYPE = 'euclidean'
 
 
@@ -24,7 +24,7 @@ def main():
         return vector_pair
 
     # gen_model()
-    utils.test_tfrecord(VER_NAME, embedding_fn, SHAPE, is_plot=PLOT_ROC, ver_type=VER_TYPE)
+    utils.test_tfrecord(VER_NAME, embedding_fn, SHAPE, is_plot=PLOT_ROC, verbose=True, ver_type=VER_TYPE)
     # utils.test_lfw(LFW_PATH, embedding_fn, SHAPE, is_plot=PLOT_ROC, ver_type=VER_TYPE)
 
 

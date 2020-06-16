@@ -17,7 +17,7 @@ KEY_IMAGE_SECOND = 'image_second'
 KEY_FIRST_NAME = 'first_name'
 KEY_SECOND_NAME = 'second_name'
 
-TARGET_FOLDER = 'glint_tiny'
+TARGET_FOLDER = 'public_face_1036_224_align'
 IMAGE_SIZE = (112, 112)
 SAME_PER_PERSON = 20
 
@@ -82,16 +82,21 @@ def write_record(writer, faces):
 
 
 def write_ver_record(writer, faces):
+    total = 0
     for i, (k, _) in enumerate(faces.items()):
         same_pool = [path for (key, paths) in faces.items() if key == k for path in paths]
         diff_pool = [path for (key, paths) in faces.items() if key != k for path in paths]
 
-        same_pairs = np.random.choice(same_pool, size=(len(same_pool) // 2, 2), replace=False)
-        diff_face = np.random.choice(diff_pool, size=len(same_pool) // 2, replace=False)
-        diff_pairs = np.vstack((same_pool[:len(same_pool) // 2], list(diff_face))).transpose()
+        cnt = min(len(same_pool) // 2, 4)
+        same_pairs = np.random.choice(same_pool, size=(cnt, 2), replace=False)
+        diff_face = np.random.choice(diff_pool, size=cnt, replace=False)
+        diff_pairs = np.vstack((same_pool[:cnt], list(diff_face))).transpose()
 
         write_pair(same_pairs, writer, is_same=1)
         write_pair(diff_pairs, writer, is_same=0)
+        total += cnt * 2
+
+    print(f'total: {total}')
 
 
 def write_pair(same_pairs, writer, is_same):
@@ -103,8 +108,8 @@ def write_pair(same_pairs, writer, is_same):
         img2 = cv2.imread(same2)
         img2 = cv2.resize(img2, IMAGE_SIZE)
         img2 = cv2.imencode('.jpg', img2)[1].tostring()
-        first_name = same1.split('/')[-1].encode('utf8')
-        second_name = same2.split('/')[-1].encode('utf8')
+        first_name = ("{}/{}".format(same1.split('/')[-2], same1.split('/')[-1])).encode('utf8')
+        second_name = ("{}/{}".format(same2.split('/')[-2], same2.split('/')[-1])).encode('utf8')
 
         example = tf.train.Example(features=tf.train.Features(feature={
             KEY_IMAGE_FIRST: tf.train.Feature(bytes_list=tf.train.BytesList(value=[img1])),

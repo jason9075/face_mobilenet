@@ -8,14 +8,13 @@ from sklearn import preprocessing
 import utils
 
 tf.random.set_seed(9075)
-IMG_SHAPE = (224, 224, 3)
-SHAPE = (224, 224)
+IMG_SHAPE = (112, 112, 3)
+SHAPE = (112, 112)
 BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
-CLASS_NAMES = np.array([])
+TRAIN_CLASS_NAMES = np.array([])
 EPOCHS = 30000
-TRAIN_DATA_PATH = 'images/public_face_1036_224/'
-# TRAIN_DATA_PATH = 'images/glint_tiny/'
+TRAIN_DATA_PATH = 'images/train_image/'
 OUTPUT_MODEL_LOGS_FOLDER = 'model_out/keras_logs'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
 OUTPUT_BEST_EMB_MODEL_FOLDER = 'model_out/keras_best_embedding'
@@ -78,7 +77,7 @@ class SaveBestValCallback(tf.keras.callbacks.Callback):
 
 def get_label(file_path):
     parts = tf.strings.split(file_path, '/')
-    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.int8)
+    one_hot = tf.cast(parts[-2] == TRAIN_CLASS_NAMES, tf.int8)
     return tf.argmax(one_hot)
 
 
@@ -117,7 +116,7 @@ def prepare_for_training(ds, cache=False, shuffle_buffer_size=2000):
 
 
 def main():
-    global CLASS_NAMES
+    global TRAIN_CLASS_NAMES
 
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
     list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))

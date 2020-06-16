@@ -26,14 +26,14 @@ def eval_by_ckpt(verification_name):
         embedding_tensor = tf.get_default_graph().get_tensor_by_name(
             f"{EMB_NODE}:0")
 
-        img1 = cv2.imread('images/glint_tiny/0_2924051/9.jpg')
+        img1 = cv2.imread('images/train_image/0_2924051/9.jpg')
         img1 = cv2.resize(img1, SHAPE)
         img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
         img1 = img1 - 127.5
         img1 *= 0.0078125
         v1 = sess.run(embedding_tensor, feed_dict={input_tensor: [img1]})[0]
 
-        img2 = cv2.imread('images/glint_tiny/0_2924051/0.jpg')
+        img2 = cv2.imread('images/train_image/0_2924051/0.jpg')
         img2 = cv2.resize(img2, SHAPE)
         img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
         img2 = img2 - 127.5

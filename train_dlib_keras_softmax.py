@@ -18,7 +18,7 @@ IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
 BATCH_SIZE = 64
 AUTOTUNE = tf.data.experimental.AUTOTUNE
-CLASS_NAMES = np.array([])
+TRAIN_CLASS_NAMES = np.array([])
 EPOCHS = 10
 TRAIN_DATA_PATH = 'images/public_face_1036_224_train/'
 # TRAIN_DATA_PATH = 'images/glint_2w/'
@@ -99,7 +99,7 @@ class CenterLossLayer(tf.keras.layers.Layer):
 
 def get_label(file_path):
     parts = tf.strings.split(file_path, '/')
-    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.float32)
+    one_hot = tf.cast(parts[-2] == TRAIN_CLASS_NAMES, tf.float32)
     return tf.argmax(one_hot), one_hot
 
 
@@ -124,7 +124,7 @@ def process_path(file_path):
 
 def process_onehot(file_path):
     parts = tf.strings.split(file_path, '/')
-    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.int8)
+    one_hot = tf.cast(parts[-2] == TRAIN_CLASS_NAMES, tf.int8)
     return one_hot, tf.constant(0)  # second is dummy
 
 
@@ -148,7 +148,7 @@ def zero_loss(y_true, y_pred):  # y_true is dummy
 
 
 def main():
-    global CLASS_NAMES
+    global TRAIN_CLASS_NAMES
 
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
     train_list_ds = tf.data.Dataset.list_files(str(train_data_dir / '*/*.jpg'))

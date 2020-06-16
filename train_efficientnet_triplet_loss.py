@@ -5,6 +5,7 @@ import efficientnet.tfkeras as efn
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from tensorflow.keras.layers import Lambda, Dense, GlobalAveragePooling2D
 
 import utils
@@ -15,9 +16,11 @@ IMG_SHAPE = (SIZE, SIZE, 3)
 SHAPE = (SIZE, SIZE)
 BATCH_SIZE = 128
 AUTOTUNE = tf.data.experimental.AUTOTUNE
-CLASS_NAMES = np.array([])
+TRAIN_CLASS_NAMES = np.array([])
+VALID_CLASS_NAMES = np.array([])
 EPOCHS = 10000
 TRAIN_DATA_PATH = 'images/train_image/'
+VALID_DATA_PATH = 'images/public_face_1036_112_align/'
 VER_RECORD = 'public_face_1036_112_align_verification.tfrecord'
 OUTPUT_EMB_MODEL_FOLDER = 'model_out/keras_embedding'
 OUTPUT_BEST_EMB_MODEL_FOLDER = 'model_out/keras_best_embedding'
@@ -49,28 +52,35 @@ def get_image_paths(facedir):
     return image_paths
 
 
-def get_label(file_path):
+def get_label(file_path, class_name):
     parts = tf.strings.split(file_path, '/')
-    one_hot = tf.cast(parts[-2] == CLASS_NAMES, tf.float32)
+    one_hot = tf.cast(parts[-2] == class_name, tf.float32)
     return tf.argmax(one_hot), one_hot
 
 
-def decode_img(path):
+def decode_img(path, aug):
     img = tf.io.read_file(path)
     img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.random_brightness(img, 0.2)
-    img = tf.image.random_saturation(img, 0.6, 1.6)
-    img = tf.image.random_contrast(img, 0.6, 1.4)
-    img = tf.image.random_flip_left_right(img)
+    if aug:
+        img = tf.image.random_brightness(img, 0.2)
+        img = tf.image.random_saturation(img, 0.6, 1.6)
+        img = tf.image.random_contrast(img, 0.6, 1.4)
+        img = tf.image.random_flip_left_right(img)
     img = tf.image.convert_image_dtype(img, tf.float32)
     img = tf.subtract(img, 0.5)
     img = tf.multiply(img, 2.0)
     return img
 
 
-def process_path(file_path):
-    label, one_hot = get_label(file_path)
-    img = decode_img(file_path)
+def process_path_train(file_path):
+    label, one_hot = get_label(file_path, TRAIN_CLASS_NAMES)
+    img = decode_img(file_path, True)
+    return img, label
+
+
+def process_path_valid(file_path):
+    label, one_hot = get_label(file_path, VALID_CLASS_NAMES)
+    img = decode_img(file_path, False)
     return img, label
 
 
@@ -104,8 +114,8 @@ def get_dataset(path):
     return dataset
 
 
-def triplet_gen():
-    dataset = get_dataset(TRAIN_DATA_PATH)
+def triplet_gen(path):
+    dataset = get_dataset(path)
 
     while True:
         np.random.shuffle(dataset)
@@ -119,22 +129,39 @@ def triplet_gen():
 
 
 def main():
-    global CLASS_NAMES
+    global TRAIN_CLASS_NAMES, VALID_CLASS_NAMES
 
     train_list_ds = tf.data.Dataset.from_generator(
-        triplet_gen,
+        lambda: triplet_gen(TRAIN_DATA_PATH),
         tf.string,
         (tf.TensorShape(())))
 
     train_data_dir = pathlib.Path(TRAIN_DATA_PATH)
-    CLASS_NAMES = np.array([item.name for item in train_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
+    TRAIN_CLASS_NAMES = np.array(
+        [item.name for item in train_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
     train_image_count = len(list(train_data_dir.glob('*/*.jpg')))
-    steps_per_epoch = np.ceil(train_image_count / BATCH_SIZE)
+    steps_per_epoch = train_image_count // BATCH_SIZE
 
-    print('total labels: %d' % len(CLASS_NAMES))
+    print('total train labels: %d' % len(TRAIN_CLASS_NAMES))
 
-    train_main_ds = train_list_ds.map(process_path, num_parallel_calls=AUTOTUNE)
+    train_main_ds = train_list_ds.map(process_path_train, num_parallel_calls=AUTOTUNE)
     train_main_ds = prepare_for_training(train_main_ds)
+
+    valid_list_ds = tf.data.Dataset.from_generator(
+        lambda: triplet_gen(VALID_DATA_PATH),
+        tf.string,
+        (tf.TensorShape(())))
+
+    valid_data_dir = pathlib.Path(VALID_DATA_PATH)
+    VALID_CLASS_NAMES = np.array(
+        [item.name for item in valid_data_dir.glob('*') if item.name not in [".keep", ".DS_Store"]])
+    valid_image_count = len(list(valid_data_dir.glob('*/*.jpg')))
+    valid_steps_per_epoch = valid_image_count // BATCH_SIZE
+
+    print('total valid labels: %d' % len(VALID_CLASS_NAMES))
+
+    valid_main_ds = valid_list_ds.map(process_path_valid, num_parallel_calls=AUTOTUNE)
+    valid_main_ds = prepare_for_training(valid_main_ds)
 
     if RESTORE_LAST_TRAIN:
         model = tf.keras.models.load_model(OUTPUT_EMB_MODEL_FOLDER)
@@ -169,10 +196,29 @@ def main():
     # iter = train_list_ds.make_one_shot_iterator()
     # next = iter.get_next()
 
+    callbacks = [
+        EarlyStopping(
+            monitor='val_loss',
+            patience=100,
+            verbose=1,
+            mode='min',
+            baseline=None,
+            restore_best_weights=False),
+        ModelCheckpoint(
+            'model_out/{epoch:02d}-{val_loss:.2f}.h5',
+            monitor="val_loss",
+            verbose=1,
+            save_best_only=True,
+            mode="min")
+    ]
+
     model.fit(train_main_ds,
               epochs=EPOCHS,
               steps_per_epoch=steps_per_epoch,
-              callbacks=[SaveBestValCallback()])
+              # callbacks=[SaveBestValCallback()],
+              callbacks=callbacks,
+              validation_data=valid_main_ds,
+              validation_steps=valid_steps_per_epoch)
 
 
 class SaveBestValCallback(tf.keras.callbacks.Callback):
